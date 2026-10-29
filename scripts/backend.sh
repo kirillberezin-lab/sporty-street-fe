@@ -16,8 +16,10 @@ BE_DIR=${BACKEND_DIR:-$FE_DIR/../sporty-street}
 PG_BIN=${PG_BIN:-/opt/homebrew/opt/postgresql@16/bin}
 PG_DATA=$FE_DIR/.dev-data/postgres
 PG_PORT=${PG_PORT:-5432}
-DB=sportystreet DB_USER=sportystreet DB_PASSWORD=sportystreet-demo
-API=http://localhost:8080
+# BACKEND_PORT / BACKEND_DB run a second backend side by side (e.g. a new version on 8081, own data).
+PORT=${BACKEND_PORT:-8080}
+DB=${BACKEND_DB:-sportystreet} DB_USER=sportystreet DB_PASSWORD=sportystreet-demo
+API=http://localhost:$PORT
 
 [ -f "$BE_DIR/pom.xml" ] || { echo "Backend not found in $BE_DIR (set BACKEND_DIR=...)"; exit 1; }
 
@@ -70,7 +72,7 @@ case "${1:-start}" in
     export PATH="$JAVA_HOME/bin:$PATH"
     export DATABASE_URL="jdbc:postgresql://localhost:$PG_PORT/$DB" DATABASE_USER=$DB_USER DATABASE_PASSWORD=$DB_PASSWORD
     echo "Starting the backend (first run downloads Maven dependencies)…"
-    cd "$BE_DIR" && exec ./mvnw -q spring-boot:run -Dspring-boot.run.profiles=local
+    cd "$BE_DIR" && exec ./mvnw -q spring-boot:run -Dspring-boot.run.profiles=local -Dspring-boot.run.arguments=--server.port=$PORT
     ;;
   stop)
     if pg_running; then "$PG_BIN/pg_ctl" -D "$PG_DATA" -m fast stop >/dev/null && echo "PostgreSQL stopped"; else echo "PostgreSQL is not running"; fi

@@ -6,8 +6,7 @@ import { api } from '../api/index.js'
 import { diffLive, isLive, isOpen, isSettled } from '../lib/liveDiff.js'
 import { handleAlerts } from './notify.js'
 import { patchRound, rounds } from './rounds.js'
-import { loadHistory, loadWallet } from './rewards.js'
-import { loadTaskProgress } from './community.js'
+import { loadCatalogue, loadHistory, loadWallet } from './rewards.js'
 
 const channels = new Map()
 
@@ -79,8 +78,8 @@ function createChannel(roundId) {
       // Settlement credited RP: refresh the wallet wherever it is shown.
       loadWallet().catch(() => {})
       loadHistory().catch(() => {})
-      // The round also counts in the task league: re-check the Rewards tasks.
-      setTimeout(() => loadTaskProgress(), 0)
+      // Lifetime leaderboard points grew: SportyBet Rewards may have unlocked.
+      loadCatalogue().catch(() => {})
     }
     if (result) rounds.results[roundId] = result
     if (leaderboard.length) rounds.participants[roundId] = Math.max(rounds.participants[roundId] ?? 0, leaderboard.length)

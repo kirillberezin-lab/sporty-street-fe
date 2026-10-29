@@ -5,6 +5,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AlertsSheet from '../components/AlertsSheet.vue'
 import Icon from '../components/Icon.vue'
+import InviteFriendsSheet from '../components/InviteFriendsSheet.vue'
 import SquadShareCard from '../components/SquadShareCard.vue'
 import { renderSquadCard } from '../lib/cards.js'
 import { challengeUrl, encodeChallenge } from '../lib/challenge.js'
@@ -14,6 +15,7 @@ import { backOr } from '../lib/nav.js'
 import { clubColor, initials, shortName } from '../lib/players.js'
 import { canShareFiles, copyText, downloadBlob, openWhatsApp, shareNative } from '../lib/share.js'
 import { recordInvite, recordShare } from '../stores/demo.js'
+import { friends, loadFriends } from '../stores/friends.js'
 import { notify } from '../stores/notify.js'
 import { loadMyTeam, loadRound, rounds } from '../stores/rounds.js'
 import { session } from '../stores/session.js'
@@ -24,8 +26,10 @@ const router = useRouter()
 const id = route.params.id
 const busy = ref('')
 const alertsOpen = ref(false)
+const inviteOpen = ref(false)
 
 onMounted(async () => {
+  loadFriends().catch(() => {})
   try {
     await Promise.all([rounds.byId[id] ? null : loadRound(id), rounds.teams[id] ? null : loadMyTeam(id)])
     if (!rounds.teams[id]) router.replace(`/rounds/${id}/build`)
@@ -143,6 +147,7 @@ const challenge = () =>
       </div>
       <SquadShareCard v-if="team" class="rise" style="animation-delay: .1s" :round-name="round?.name ?? ''" :title="owner" :players="cardPlayers" :link="shortLink" />
       <span class="xs soft-w tc" style="max-width: 300px">Friends who open your link land on this round with your five to beat — and you'll see them in your live standings.</span>
+      <button v-if="friends.available !== false && round?.status === 'OPEN'" class="btn md ghost on-dark-b" style="width: auto; padding: 0 18px" @click="inviteOpen = true"><Icon name="userPlus" :size="18" />Invite friends to this round</button>
     </main>
     <footer class="foot">
       <div class="row g6">
@@ -153,6 +158,7 @@ const challenge = () =>
       <button class="btn wht" :disabled="!team || busy === 'challenge'" @click="challenge"><span v-if="busy === 'challenge'" class="spin" />Challenge a friend</button>
     </footer>
     <AlertsSheet :open="alertsOpen" @close="alertsOpen = false" />
+    <InviteFriendsSheet :open="inviteOpen" :round="round" @close="inviteOpen = false" />
   </div>
 </template>
 

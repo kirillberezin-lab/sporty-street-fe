@@ -4,7 +4,7 @@ import { useRoute } from 'vue-router'
 import Icon from './Icon.vue'
 import { liveRounds, rounds } from '../stores/rounds.js'
 import { claimable } from '../stores/missions.js'
-import { claimableTotal } from '../stores/perks.js'
+import { claimableRewards } from '../stores/rewards.js'
 
 const route = useRoute()
 const tabs = [
@@ -16,7 +16,7 @@ const tabs = [
 ]
 const dots = computed(() => ({
   '/play': liveRounds().some((r) => rounds.teams[r.id]),
-  '/rewards': claimable().length > 0 || claimableTotal() > 0,
+  '/rewards': claimable().length > 0 || claimableRewards() > 0,
 }))
 </script>
 

@@ -33,6 +33,10 @@ const FRIENDLY = {
   INSUFFICIENT_RP: 'Not enough reward points for this gift yet.',
   GIFT_UNAVAILABLE: 'This gift is no longer available.',
   ROUND_NOT_SETTLED: 'The result appears once the round is settled.',
+  REWARD_LOCKED: 'Earn more leaderboard points to unlock this reward.',
+  REWARD_ALREADY_CLAIMED: 'You have already claimed this reward.',
+  NOT_FRIENDS: 'You can only invite people from your friends list.',
+  INVITATION_CLOSED: 'This invitation is no longer pending.',
 }
 
 export class ApiError extends Error {

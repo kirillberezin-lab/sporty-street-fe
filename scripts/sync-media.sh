@@ -15,6 +15,12 @@ for d in players avatars leagues; do
   cp -R "$MEDIA/$d" "public/media/$d"
   echo "public/media/$d: $(ls "public/media/$d" | wc -l | tr -d ' ') files"
 done
+# Reward art: merch photos + credits only (the SportyBet creatives ship lighter in public/rewards).
+if [ -d "$MEDIA/rewards" ]; then
+  rm -rf public/media/rewards && mkdir -p public/media/rewards
+  cp "$MEDIA"/rewards/red-* "$MEDIA/rewards/credits.json" public/media/rewards/ 2>/dev/null || true
+  echo "public/media/rewards: $(ls public/media/rewards | wc -l | tr -d ' ') files"
+fi
 if [ -f "$SEED" ]; then
   { echo "// Generated from the backend seed (src/main/resources/seed/community.json) by scripts/sync-media.sh."
     echo "// Simulated social content: leagues, rivalries, banter, managers. Do not edit by hand."

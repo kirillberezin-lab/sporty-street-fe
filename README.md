@@ -169,28 +169,36 @@ live standings and in league rivalries. Limitations: on iOS links open in Safari
 (no link capturing); rich previews in chats use the static `og:image` (set `PUBLIC_URL` for an absolute URL) —
 per-squad previews would need server-side rendered OG tags.
 
-## Rewards (agreed with the backend, 29 Oct)
+## Rewards, profile, friends (backend update of 29 Oct, `docs/profile-play-rewards-api.md`)
 
-Rewards has two categories:
+* **Rewards** reads `GET /rewards/catalogue`, which has two categories:
+  * **SportyBet Rewards** are free, claimable once, and unlocked by lifetime leaderboard points:
+    Referral 0, Free Bet 500, Cashback 3,000, Lucky Wheel 5,000.
+  * **Sporty Merch** costs RP: Cap 3,000, T-shirt 4,500, Hoodie 6,000.
 
-1. **Sporty merch store.** Bought with RP from rounds and missions. Matchday Coffee and Club Scarf
-   are hidden (`HIDDEN_GIFTS`).
-2. **Partner rewards.** The four creatives in `public/rewards/`, never bought (`src/lib/perks.js`,
-   `src/stores/perks.js`).
+  Claiming and buying both go through `POST /gifts/{id}/purchases`. A claimed Lucky Wheel gives one
+  spin on this device. The creatives come from `public/rewards/*.webp`.
+* **Profile** reads `/me/profile`: XP and level, stats, badges, top Home Hero, history and overall rank.
+  The **overall leaderboard** is at `/leaderboard`, from `GET /leaderboard`.
+* **Friends and invitations:**
+  * On *Squad locked in*, use "Invite friends to this round".
+  * The recipient sees an invitation card on Home with Accept & join, which auto-picks a five, or Decline.
+* **Play:**
+  * Format chips come from `round.format` (Quick, Matchday, Special), and player counts from `participantCount`.
+  * `/me/round-history` tells which rounds need `/my-team`.
+* **Older backends** answer 404 on these endpoints. The app then falls back to the bundled catalogue
+  (`src/mock/rewards.js`), computes the profile locally, and hides friends. The mock
+  (`dev:mock` and GitHub Pages) implements all of them.
 
-   | Reward | State | How |
-   |---|---|---|
-   | Free bet | open | Claim the ZMW 10 free bet gift |
-   | Refer a friend | open | ZMW 20 free bet per invited friend |
-   | Cashback | locked | Reach #1 in Lagos Ballers → ZMW 15 virtual cashback |
-   | Lucky Wheel | locked | Win 5 rounds in Lagos Ballers → 3 spins |
+Run a second backend next to yours (new version, own database):
 
-   The seeded league table is static, so the rounds you finish are added to your row in Lagos
-   Ballers (`withMyRounds` in `stores/community.js`). Their points go to your league score, and each
-   round you win counts as a league win. Alice starts 2nd, 23 pts behind Ada, with 4 wins, so one
-   good round unlocks both rewards and fires a "Reward unlocked" alert. Claimed codes are demo
-   entitlements until the partner APIs exist. When the backend ships its own task state, replace
-   `taskStatus()` with it.
+```bash
+BACKEND_PORT=8081 BACKEND_DB=sportystreet_v6 npm run backend
+```
+
+```bash
+API_TARGET=http://localhost:8081 npm run dev
+```
 
 ## Social screens (community API)
 

@@ -60,10 +60,18 @@ async function fetchRounds() {
     // GET /rounds lists only OPEN and LIVE rounds; settled ones need status=SETTLED (DRAFT is never listed).
     const [active, settled] = await Promise.all([api.rounds(), api.rounds({ status: 'SETTLED' }).catch(() => ({ items: [] }))])
     rounds.list = sortRounds([...(active.items ?? []), ...(settled.items ?? [])])
-    for (const r of rounds.list) rounds.byId[r.id] = r
+    for (const r of rounds.list) {
+      rounds.byId[r.id] = r
+      if (r.participantCount != null) rounds.participants[r.id] = r.participantCount
+    }
     // Scheduled rounds cannot have entries yet; skip their guaranteed 404s.
     for (const r of rounds.list) if (phaseOf(r) === 'scheduled') rounds.teams[r.id] = null
-    await Promise.all(rounds.list.filter((r) => phaseOf(r) !== 'scheduled').map((r) => loadMyTeam(r.id).catch(() => null)))
+    // /me/round-history (newer backends) says which rounds I entered, so only those need /my-team —
+    // the seeded history has dozens of settled rounds.
+    const played = await api.roundHistory().then((h) => new Set((h.items ?? []).map((x) => x.roundId)), () => null)
+    const candidates = rounds.list.filter((r) => phaseOf(r) !== 'scheduled')
+    for (const r of candidates) if (played && !played.has(r.id)) rounds.teams[r.id] = null
+    await Promise.all(candidates.filter((r) => !played || played.has(r.id)).map((r) => loadMyTeam(r.id).catch(() => null)))
     rounds.loaded = true
     resolveCountryName()
   } catch (e) {
@@ -106,6 +114,8 @@ export async function loadResult(roundId) {
 
 /** Team count of a round. Always refetched: it grows while entries are open (cached value shows meanwhile). */
 export async function loadParticipants(roundId) {
+  const known = rounds.byId[roundId]?.participantCount
+  if (known != null) return (rounds.participants[roundId] = known)
   try {
     const lb = await api.leaderboard(roundId, { size: 1 })
     rounds.participants[roundId] = lb.standings?.total ?? 0

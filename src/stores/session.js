@@ -7,14 +7,16 @@ import { store } from '../lib/util.js'
 
 // Seeded users of the backend's local profile (DemoSeed): home countries drive the Home Hero.
 export const DEMO_USERS = [
-  { username: 'alice', note: 'Brazil' },
+  { username: 'alice', note: 'Brazil · friends with Bob, Carol, Dave' },
   { username: 'bob', note: 'France · rival team in round 1' },
   { username: 'carol', note: 'England · rival team in round 1' },
-  { username: 'dave', note: 'Spain' },
+  { username: 'dave', note: 'Spain · accepts Alice’s invitations' },
   { username: 'eve', note: 'Argentina' },
   { username: 'frank', note: 'Germany' },
   { username: 'grace', note: 'No home country' },
   { username: 'henry', note: 'No home country' },
+  { username: 'ivy', note: 'No home country · no avatar' },
+  { username: 'jack', note: 'No home country · no avatar' },
 ]
 
 export const session = reactive({

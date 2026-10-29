@@ -1,13 +1,72 @@
+// RP wallet, gifts and the personalised reward catalogue (GET /rewards/catalogue): Sporty Merch for RP
+// and SportyBet Rewards unlocked by lifetime leaderboard points. Older backends without the catalogue
+// get the same shape from the bundled port (mock/rewards.js) with points from my settled rounds.
 import { reactive } from 'vue'
 import { api } from '../api/index.js'
+import { ApiError } from '../api/client.js'
+import { buildCatalogue, REWARD_GIFTS } from '../mock/rewards.js'
+import { isSettled } from '../lib/liveDiff.js'
+import { claimLocally, usePartners } from './perks.js'
+import { loadResult, loadRounds, rounds } from './rounds.js'
 
 export const rewards = reactive({
   balance: null,
   gifts: [],
   purchases: [],
   history: [],
+  catalogue: null, // { wallet, leaderboard, categories, items }
+  catalogueMode: null, // api | bundled
   loaded: { wallet: false, gifts: false, purchases: false, history: false },
 })
+
+async function bundledCatalogue() {
+  await loadRounds().catch(() => null)
+  const mine = rounds.list.filter((r) => isSettled(r.status) && rounds.teams[r.id])
+  await Promise.all(mine.map((r) => loadResult(r.id).catch(() => null)))
+  const points = mine.reduce((s, r) => s + (rounds.results[r.id]?.finalScore ?? 0), 0)
+  const [wallet, gifts] = await Promise.all([api.wallet(), api.gifts()])
+  const local = usePartners().localClaims
+  // Old catalogue items stay purchasable as merch; SportyBet rewards come from the bundled seed.
+  const merch = (gifts.items ?? []).filter((g) => !['Matchday Coffee', 'Club Scarf'].includes(g.name)).map((g) => ({ ...g, category: 'SPORTY_MERCH', requiredPoints: 0, onePerUser: false }))
+  return buildCatalogue({
+    balanceRp: wallet.balanceRp ?? 0,
+    ranking: { points, rank: null, roundsPlayed: mine.length },
+    gifts: [...merch, ...REWARD_GIFTS.filter((g) => g.category === 'SPORTYBET_REWARDS')],
+    claimedGiftIds: Object.keys(local),
+  })
+}
+
+export async function loadCatalogue() {
+  try {
+    rewards.catalogue = await api.catalogue()
+    rewards.catalogueMode = 'api'
+  } catch (e) {
+    if (!(e instanceof ApiError) || e.status !== 404) throw e
+    rewards.catalogue = await bundledCatalogue()
+    rewards.catalogueMode = 'bundled'
+  }
+  rewards.balance = rewards.catalogue.wallet?.balanceRp ?? rewards.balance
+  rewards.loaded.wallet = true
+  return rewards.catalogue
+}
+
+/** Buys merch or claims a free SportyBet reward; both are purchases on the server. */
+export async function claimItem(item) {
+  if (rewards.catalogueMode === 'bundled' && item.gift.priceRp === 0) {
+    const purchase = claimLocally(item.gift)
+    await loadCatalogue()
+    return purchase
+  }
+  const purchase = await buy(item.gift)
+  await loadCatalogue().catch(() => {})
+  return purchase
+}
+
+export const perkItems = () => (rewards.catalogue?.items ?? []).filter((i) => i.gift.category === 'SPORTYBET_REWARDS').sort((a, b) => (a.gift.requiredPoints ?? 0) - (b.gift.requiredPoints ?? 0))
+export const merchItems = () => (rewards.catalogue?.items ?? []).filter((i) => i.gift.category === 'SPORTY_MERCH').sort((a, b) => a.gift.priceRp - b.gift.priceRp)
+export const claimableRewards = () => perkItems().filter((i) => i.canClaim).length
+/** The purchase behind a claimed reward (for its code / the wheel spin). */
+export const purchaseOf = (giftId) => rewards.purchases.find((p) => p.giftId === giftId) ?? usePartners().localClaims[giftId] ?? null
 
 export async function loadWallet() {
   const w = await api.wallet()
@@ -43,7 +102,7 @@ export async function buy(gift) {
 }
 
 export function resetRewards() {
-  Object.assign(rewards, { balance: null, gifts: [], purchases: [], history: [], loaded: { wallet: false, gifts: false, purchases: false, history: false } })
+  Object.assign(rewards, { balance: null, gifts: [], purchases: [], history: [], catalogue: null, catalogueMode: null, loaded: { wallet: false, gifts: false, purchases: false, history: false } })
 }
 
 /** Visual identity for gift cards (design 8.1), keyed by the backend category (FOOD / SHOPPING / MERCH). */

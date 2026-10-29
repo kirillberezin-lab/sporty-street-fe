@@ -27,6 +27,7 @@ const routes = [
   { path: '/rewards/vouchers', component: () => import('./views/Vouchers.vue') },
   { path: '/rewards/perks/:id', component: () => import('./views/RewardOffer.vue') },
   { path: '/rewards/vouchers/:id', component: () => import('./views/Voucher.vue') },
+  { path: '/leaderboard', component: () => import('./views/OverallLeaderboard.vue') },
   { path: '/notifications', component: () => import('./views/Notifications.vue') },
   { path: '/settings', component: () => import('./views/Settings.vue') },
   { path: '/rules', component: () => import('./views/Rules.vue') },

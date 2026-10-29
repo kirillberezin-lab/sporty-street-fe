@@ -7,7 +7,7 @@ import TopBar from '../components/TopBar.vue'
 import { credits, loadCredits } from '../stores/credits.js'
 
 onMounted(loadCredits)
-const SECTIONS = [['players', 'Players'], ['avatars', 'Profile avatars'], ['leagues', 'League artwork']]
+const SECTIONS = [['players', 'Players'], ['avatars', 'Profile avatars'], ['leagues', 'League artwork'], ['rewards', 'Reward artwork']]
 const groups = computed(() => SECTIONS.map(([kind, label]) => ({ kind, label, list: credits.list.filter((c) => c.kind === kind).sort((a, b) => a.title.localeCompare(b.title)) })).filter((g) => g.list.length))
 </script>
 

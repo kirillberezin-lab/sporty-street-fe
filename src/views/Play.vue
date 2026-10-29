@@ -29,23 +29,24 @@ function byDay(which) {
   })
 }
 
-// Quick = a one-match round, Matchday = several fixtures.
-const kindOf = (r) => ((r.fixtures?.length ?? 0) <= 1 ? 'quick' : 'matchday')
+// The backend sends format (QUICK / MATCHDAY / SPECIAL); older ones: one match = quick.
+const kindOf = (r) => (r.format ? r.format.toLowerCase() : (r.fixtures?.length ?? 0) <= 1 ? 'quick' : 'matchday')
 const KINDS = [
   { id: 'all', label: 'All' },
   { id: 'quick', label: 'Quick' },
   { id: 'matchday', label: 'Matchday' },
+  { id: 'special', label: 'Special' },
 ]
 const inSeg = computed(() => byDay(seg.value))
 const counts = computed(() => {
-  const c = { all: inSeg.value.length, quick: 0, matchday: 0 }
-  for (const r of inSeg.value) c[kindOf(r)]++
+  const c = { all: inSeg.value.length, quick: 0, matchday: 0, special: 0 }
+  for (const r of inSeg.value) c[kindOf(r)] = (c[kindOf(r)] ?? 0) + 1
   return c
 })
 const list = computed(() => (kind.value === 'all' ? inSeg.value : inSeg.value.filter((r) => kindOf(r) === kind.value)))
 // The filter hides everything this tab has: say so instead of "nothing here".
 const filteredOut = computed(() => kind.value !== 'all' && !list.value.length && inSeg.value.length > 0)
-const kindName = computed(() => (kind.value === 'quick' ? 'quick (1 match)' : 'matchday'))
+const kindName = computed(() => ({ quick: 'quick (1 match)', matchday: 'matchday', special: 'special' })[kind.value])
 
 function refresh() {
   loadRounds({ force: true })

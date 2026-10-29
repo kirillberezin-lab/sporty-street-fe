@@ -7,7 +7,7 @@ export const credits = reactive({ list: [], loaded: false, error: null })
 let inflight = null
 
 // Players are required; avatars and league art exist from the community update on.
-const FILES = ['players', 'avatars', 'leagues']
+const FILES = ['players', 'avatars', 'leagues', 'rewards']
 const fetchList = (dir) => fetch(asset(`media/${dir}/credits.json`)).then((r) => {
   if (!r.ok) throw new Error(`Photo credits unavailable (${r.status})`)
   return r.json()
@@ -16,7 +16,7 @@ const fetchList = (dir) => fetch(asset(`media/${dir}/credits.json`)).then((r) =>
 export function loadCredits() {
   if (credits.loaded) return Promise.resolve(credits.list)
   inflight ??= Promise.all(FILES.map((dir, i) => fetchList(dir).then(
-    (list) => (Array.isArray(list) ? list : []).map((c) => ({ ...c, kind: dir, title: c.player ?? c.subject ?? c.key })),
+    (list) => (Array.isArray(list) ? list : []).map((c) => ({ ...c, kind: dir, title: c.player ?? c.subject ?? c.key ?? c.name ?? (c.imageUrl ?? '').split('/').pop().replace(/\.\w+$/, '').replace(/-/g, ' ') })),
     (e) => { if (i === 0) throw e; return [] },
   )))
     .then((lists) => {

@@ -10,7 +10,8 @@ import { closeAllLive, watchLiveRounds } from './stores/live.js'
 import { handleAlerts, initNotify, loadInbox, syncPush } from './stores/notify.js'
 import { loadRounds, resetRounds, rounds } from './stores/rounds.js'
 import { resetRewards } from './stores/rewards.js'
-import { earnedRewards } from './stores/perks.js'
+import { perkItems, rewards as rewardsStore } from './stores/rewards.js'
+const rewardsCatalogueLoaded = () => Boolean(rewardsStore.catalogue)
 import { resetCommunity } from './stores/community.js'
 import { boot, session } from './stores/session.js'
 import { toast } from './stores/ui.js'
@@ -81,21 +82,20 @@ watch(() => session.epoch, async () => {
   await loadRounds()
 })
 
-// "Reward unlocked" when a league task opens cashback or the Lucky Wheel. Seen ids are kept per user,
-// so reloads and lazily loaded standings never alert twice.
-watch(() => (session.status === 'ready' ? earnedRewards().filter((r) => r.id.startsWith('task:')) : null), (list) => {
-  if (!list) return
-  const key = `rewardsSeen:${session.username}`
-  const seen = store.get(key, [])
-  const fresh = list.filter((r) => !seen.includes(r.id))
+// "Reward unlocked" when lifetime leaderboard points open a SportyBet reward (the catalogue reloads
+// at full time). Unlocked ids are remembered per user, so only new unlocks alert.
+watch(() => (session.status === 'ready' && rewardsCatalogueLoaded() ? perkItems().filter((i) => i.unlocked).map((i) => i.gift) : null), (gifts) => {
+  if (!gifts) return
+  const key = `rewardsSeen:v2:${session.username}`
+  const seen = store.get(key, null)
+  store.set(key, gifts.map((g) => g.id))
+  if (!seen) return // first load: what is unlocked already is not news
+  const fresh = gifts.filter((g) => !seen.includes(g.id))
   if (!fresh.length) return
-  store.set(key, [...seen, ...fresh.map((r) => r.id)].slice(-200))
-  const main = fresh.find((r) => r.kind !== 'spin') ?? fresh[0]
-  const spins = fresh.filter((r) => r.kind === 'spin').length
   handleAlerts([{
-    id: `reward:${main.id}`, type: 'result', tag: 'reward', url: `/rewards/perks/${main.offerId}`, createdAt: new Date().toISOString(),
-    title: `Reward unlocked: ${main.kind === 'spin' ? `${spins} Lucky Wheel spins` : main.label} 🎁`,
-    body: `${main.why}.${main.kind !== 'spin' && spins ? ` +${spins} Lucky Wheel spins.` : ''} Tap to claim.`,
+    id: `reward:${fresh[0].id}`, type: 'result', tag: 'reward', url: `/rewards/perks/${fresh[0].id}`, createdAt: new Date().toISOString(),
+    title: `Reward unlocked: ${fresh.map((g) => g.name).join(' + ')} 🎁`,
+    body: 'Your leaderboard points opened a new SportyBet reward. Tap to claim.',
   }])
 })
 

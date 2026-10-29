@@ -13,6 +13,9 @@ import { useNow } from '../lib/now.js'
 import { pwa } from '../lib/pwa.js'
 import { twistCopy } from '../lib/rules.js'
 import { community, loadLeagues } from '../stores/community.js'
+import { incoming, loadFriends, respond } from '../stores/friends.js'
+import { toast, toastError } from '../stores/ui.js'
+import { useRouter } from 'vue-router'
 import { demo } from '../stores/demo.js'
 import { missionList } from '../stores/missions.js'
 import { capability, notify, unreadCount } from '../stores/notify.js'
@@ -28,6 +31,7 @@ const installDismissed = ref(store.get('installDismissed', false))
 
 onMounted(async () => {
   if (!community.loaded) loadLeagues()
+  loadFriends({ force: true }).catch(() => {})
   await loadRounds({ force: rounds.loaded })
   const settled = rounds.list.filter((r) => phaseOf(r) === 'settled' && rounds.teams[r.id])
   settled.slice(0, 2).forEach((r) => loadResult(r.id).catch(() => {}))
@@ -53,6 +57,24 @@ const leagueLine = computed(() => {
   return `${l.myRank === 1 ? 'Top of the table' : top ? `${top.displayName} leads` : `${l.memberCount} members`}${l.roundsRemaining ? ` · ${l.roundsRemaining} rounds left` : ''}`
 })
 const leagueRank = computed(() => league.value?.myRank ?? null)
+// Round invitations from friends (persisted on the server): accept = enter with an auto-picked five.
+const router = useRouter()
+const invites = computed(() => incoming())
+const answering = ref(null)
+async function answer(inv, accept) {
+  answering.value = inv.id
+  try {
+    await respond(inv, accept)
+    if (accept) {
+      toast({ title: `You're in ${inv.roundName}`, body: 'We picked a five for you — edit it before the lock.', tone: 'success' })
+      router.push(`/rounds/${inv.roundId}/build`)
+    }
+  } catch (e) {
+    toastError(e, 'Could not answer the invitation')
+  } finally {
+    answering.value = null
+  }
+}
 const showAlertsCard = computed(() => notify.permission !== 'granted' && !['unsupported', 'insecure'].includes(capability().level))
 const showInstall = computed(() => !pwa.installed && !installDismissed.value && (pwa.canInstall || pwa.isIOS))
 const unread = computed(() => unreadCount())
@@ -137,6 +159,17 @@ function dismissInstall() {
       </div>
 
       <!-- upcoming -->
+      <div v-for="inv in invites" :key="inv.id" class="card col g10 invite">
+        <div class="row g12">
+          <Avatar :name="inv.sender.displayName" :src="inv.sender.avatarUrl" size="md" />
+          <div class="col g2 f1"><b class="sm">{{ inv.sender.displayName }} invited you</b><span class="xs m">{{ inv.roundName }} · join with an auto-picked five</span></div>
+        </div>
+        <div class="row g6">
+          <button class="btn sm ghost f1" :disabled="answering === inv.id" @click="answer(inv, false)">Decline</button>
+          <button class="btn sm f1" :disabled="answering === inv.id" @click="answer(inv, true)"><span v-if="answering === inv.id" class="spin" />Accept &amp; join</button>
+        </div>
+      </div>
+
       <template v-if="upcoming.length">
         <div class="sec-t"><span class="h3">Upcoming rounds</span><RouterLink to="/play">See all</RouterLink></div>
         <div class="hscroll">
@@ -180,4 +213,5 @@ function dismissInstall() {
 <style scoped>
 .bell-dot { position: absolute; top: 6px; right: 6px; width: 10px; height: 10px; border-radius: 50%; background: var(--gold); border: 2px solid var(--red); }
 .next-card { background: linear-gradient(135deg, #E41827, #9C0D18); box-shadow: 0 12px 26px rgba(228, 24, 39, .3); }
+.invite { border: 1.5px solid var(--red); background: linear-gradient(180deg, #FFF5F6, #fff); }
 </style>

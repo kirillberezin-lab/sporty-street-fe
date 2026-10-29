@@ -133,12 +133,12 @@ export const PLAYERS = CLUB_DATA.flatMap(([, , players], c) =>
 )
 
 const HOME = ['BRA', 'FRA', 'ENG', 'ESP', 'ARG', 'DEU']
-export const USERS = ['alice', 'bob', 'carol', 'dave', 'eve', 'frank', 'grace', 'henry'].map((username, i) => ({
+export const USERS = ['alice', 'bob', 'carol', 'dave', 'eve', 'frank', 'grace', 'henry', 'ivy', 'jack'].map((username, i) => ({
   id: uid(`user:${username}`),
   username,
   displayName: username[0].toUpperCase() + username.slice(1),
   countryId: i < HOME.length ? country(HOME[i]).id : null,
-  avatarUrl: `/media/avatars/${username}.jpg`, // V5__user_avatars + DemoSeed
+  avatarUrl: i < 8 ? `/media/avatars/${username}.jpg` : null, // V5__user_avatars + DemoSeed; ivy/jack have none
 }))
 
 export const GIFTS = [
@@ -185,4 +185,16 @@ export function seedRounds(now = Date.now(), subDelaySeconds = RULES.subActivati
       kickoffAt: start,
     })),
   }))
+}
+
+// ShowcaseSeed: Alice's friends, and the lifetime history the backend seeds (40 historical rounds).
+// The mock does not replay those rounds; it starts each account from the same order of magnitude:
+// Alice qualifies for the Free Bet (500 pts) but not Cashback (3,000), and has 4,000 RP for the cap.
+export const FRIENDS = { alice: ['bob', 'carol', 'dave'], bob: ['alice'], carol: ['alice'], dave: ['alice'] }
+export const HISTORY = {
+  alice: { points: 2160, rounds: 18, wins: 4, rp: 4000 }, bob: { points: 2480, rounds: 20, wins: 5, rp: 3100 },
+  carol: { points: 1890, rounds: 16, wins: 3, rp: 2600 }, dave: { points: 1520, rounds: 14, wins: 2, rp: 2100 },
+  eve: { points: 1240, rounds: 12, wins: 2, rp: 1700 }, frank: { points: 980, rounds: 10, wins: 1, rp: 1350 },
+  grace: { points: 640, rounds: 7, wins: 1, rp: 900 }, henry: { points: 410, rounds: 5, wins: 0, rp: 550 },
+  ivy: { points: 0, rounds: 0, wins: 0, rp: 0 }, jack: { points: 0, rounds: 0, wins: 0, rp: 0 },
 }

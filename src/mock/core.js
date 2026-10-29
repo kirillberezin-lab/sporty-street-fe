@@ -12,7 +12,8 @@
 //
 // Wrapped by server/mock-api.mjs (Node http) and src/api/local.js (in the browser).
 import { createCommunity } from './community.js'
-import { CLUBS, GIFTS, PLAYERS, RULES, USERS, seedRounds, uid } from './data.js'
+import { CLUBS, FRIENDS, HISTORY, PLAYERS, RULES, USERS, seedRounds, uid } from './data.js'
+import { REWARD_GIFTS as GIFTS, buildCatalogue } from './rewards.js'
 
 const uuid = () =>
   globalThis.crypto?.randomUUID?.() ??
@@ -106,6 +107,7 @@ export function createMockCore({ minuteMs = 2000, subDelaySeconds = 60, mediaBas
       wallets: Object.fromEntries(USERS.map((u) => [u.id, 0])),
       ledger: [],
       purchases: [],
+      invitations: [], // { id, senderId, recipientId, roundId, status, createdAt, respondedAt }
       idem: new Map(),
     }
   }
@@ -148,6 +150,11 @@ export function createMockCore({ minuteMs = 2000, subDelaySeconds = 60, mediaBas
       subWindowOpensAt: iso(r.subWindowOpensAt), subWindowClosesAt: iso(r.subWindowClosesAt),
       rules: r.rules, stateVersion: r.stateVersion, serverTime: iso(Date.now()),
       fixtures: r.fixtures.map((f) => ({ ...f, kickoffAt: iso(f.kickoffAt) })),
+      // V6 round_presentation + counts
+      format: r.format ?? (r.fixtures.length === 1 ? 'QUICK' : 'MATCHDAY'),
+      matchCount: r.fixtures.length,
+      participantCount: db.teams.filter((t) => t.roundId === r.id).length,
+      simulated: true,
     }
   }
   function requireRound(id) {
@@ -684,12 +691,104 @@ export function createMockCore({ minuteMs = 2000, subDelaySeconds = 60, mediaBas
     if (!user) throw new ApiError(401, 'UNAUTHENTICATED', 'Unknown demo user')
     return user
   }
-  // The static demo has no rounds history to earn from yet, so every player starts with a gift.
+  // ShowcaseSeed history: RP from the seeded past rounds, credited once per account.
   function welcome(user) {
-    if (!autopilot || db.ledger.some((l) => l.userId === user.id && l.reason === 'WELCOME')) return
-    db.ledger.push({ id: uuid(), userId: user.id, delta: 100, reason: 'WELCOME', roundId: null, purchaseId: null, createdAt: Date.now() })
-    db.wallets[user.id] += 100
+    const rp = HISTORY[user.username]?.rp ?? 0
+    if (!rp || db.ledger.some((l) => l.userId === user.id && l.reason === 'HISTORY')) return
+    db.ledger.push({ id: uuid(), userId: user.id, delta: rp, reason: 'HISTORY', roundId: null, purchaseId: null, createdAt: Date.now() - 86400_000 })
+    db.wallets[user.id] = (db.wallets[user.id] ?? 0) + rp
     onChange()
+  }
+
+  // ---------- profile, overall leaderboard (ProfileService) ----------
+  const resultsOf = (userId) => db.results.filter((x) => db.teams.find((t) => t.id === x.teamId)?.userId === userId)
+  function rankings() {
+    const rows = USERS.map((u) => {
+      const h = HISTORY[u.username] ?? { points: 0, rounds: 0 }
+      const mine = resultsOf(u.id)
+      return { userId: u.id, username: u.username, displayName: u.displayName, avatarUrl: media(u.avatarUrl), points: h.points + mine.reduce((s, x) => s + x.finalScore, 0), roundsPlayed: h.rounds + mine.length }
+    }).sort((a, b) => b.points - a.points || a.userId.localeCompare(b.userId))
+    rows.forEach((r, i) => (r.rank = i > 0 && rows[i - 1].points === r.points ? rows[i - 1].rank : i + 1))
+    return rows.map(({ userId, username, displayName, avatarUrl, points, rank, roundsPlayed }) => ({ userId, username, displayName, avatarUrl, points, rank, roundsPlayed }))
+  }
+  const ranking = (userId) => rankings().find((r) => r.userId === userId)
+  function history(userId) {
+    return db.teams.filter((t) => t.userId === userId)
+      .map((t) => ({ t, r: roundById(t.roundId), res: db.results.find((x) => x.teamId === t.id) }))
+      .filter((x) => x.r)
+      .sort((a, b) => b.r.entryDeadline - a.r.entryDeadline || a.r.id.localeCompare(b.r.id))
+      .map(({ t, r, res }) => ({ roundId: r.id, name: r.name, status: r.status, startsAt: iso(r.entryDeadline), score: res?.finalScore ?? breakdown(t).total, rank: res?.finalRank ?? null, earnedRp: res ? res.participationRp + res.winnerRp : 0 }))
+  }
+  function profile(user) {
+    const rank = ranking(user.id)
+    const h = HISTORY[user.username] ?? { wins: 0 }
+    const mine = resultsOf(user.id)
+    const teams = db.teams.filter((t) => t.userId === user.id)
+    const wins = h.wins + mine.filter((x) => x.finalRank === 1).length
+    const smart = teams.filter((t) => t.subs.some((sub) => contributions(t, roundById(t.roundId)).some((l) => l.playerId === sub.incomingPlayerId && Date.parse(l.occurredAt) >= sub.effectiveAt && l.points > 0))).length
+    const heroes = new Map()
+    for (const t of teams) for (const l of contributions(t, roundById(t.roundId))) if (l.component === 'HOME_HERO_BONUS') heroes.set(l.playerId, (heroes.get(l.playerId) ?? 0) + l.points)
+    const top = [...heroes].sort((a, b) => b[1] - a[1])[0]
+    const days = new Set(mine.map((x) => new Date(x.settledAt).toISOString().slice(0, 10)))
+    let streak = 0
+    for (let d = Date.now(); days.has(new Date(d).toISOString().slice(0, 10)); d -= 86400_000) streak++
+    const xp = rank.roundsPlayed * 100 + rank.points
+    const accepted = db.invitations.some((i) => i.senderId === user.id && i.status === 'ACCEPTED')
+    const hist = history(user.id)
+    return {
+      user: userResponse(user), bio: 'Football fan · Building my world five',
+      joinedAt: rank.roundsPlayed ? iso(Date.now() - 45 * 86400_000) : null,
+      stats: { roundsPlayed: rank.roundsPlayed, averagePoints: rank.roundsPlayed ? Math.round((rank.points * 10) / rank.roundsPlayed) / 10 : 0, bestFinish: wins ? 1 : mine.length ? Math.min(...mine.map((x) => x.finalRank)) : null, wins, substitutions: teams.reduce((s, t) => s + t.subsUsed, 0), smartSubs: smart, streakDays: streak },
+      progress: { xp, level: 1 + Math.floor(xp / 1000), xpInLevel: xp % 1000, xpForNextLevel: 1000, title: xp >= 5000 ? 'All-Star' : xp >= 2000 ? 'Playmaker' : 'Rookie' },
+      leaderboard: rank,
+      badges: [
+        { code: 'SUPER_SUB', name: 'Super Sub', unlocked: smart > 0 }, { code: 'STREAK', name: '7-day streak', unlocked: streak >= 7 },
+        { code: 'PATRIOT', name: 'Home Hero', unlocked: Boolean(top) }, { code: 'RECRUITER', name: 'Team Player', unlocked: accepted },
+        { code: 'WINNER', name: 'Winner', unlocked: wins > 0 },
+      ],
+      topHomeHero: top ? { playerId: top[0], name: playerById(top[0]).name, imageUrl: media(playerById(top[0]).imageUrl), bonusPoints: top[1] } : null,
+      roundHistory: { items: hist.slice(0, 10), page: 0, size: 10, total: hist.length },
+    }
+  }
+
+  // ---------- friends & round invitations (FriendService) ----------
+  const userByName = (name) => USERS.find((u) => u.username === name)
+  function friend(u) {
+    return { id: u.id, username: u.username, displayName: u.displayName, avatarUrl: media(u.avatarUrl), leaderboardPoints: ranking(u.id).points }
+  }
+  function invitation(i) {
+    const round = roundById(i.roundId)
+    const expired = i.status === 'PENDING' && (!round || round.status !== 'OPEN' || Date.now() >= round.entryDeadline)
+    return { id: i.id, sender: friend(userById(i.senderId)), recipient: friend(userById(i.recipientId)), roundId: i.roundId, roundName: round?.name ?? 'Round', status: expired ? 'EXPIRED' : i.status, createdAt: iso(i.createdAt), respondedAt: iso(i.respondedAt) }
+  }
+  function invite(sender, friendId, roundId) {
+    const round = requireRound(roundId)
+    if (round.status !== 'OPEN' || Date.now() >= round.entryDeadline) throw rule('ROUND_LOCKED', 'Invitations require an open round')
+    const recipient = userById(friendId)
+    if (!recipient || !(FRIENDS[sender.username] ?? []).includes(recipient.username)) throw rule('NOT_FRIENDS', 'Invite someone from your friends list')
+    let i = db.invitations.find((x) => x.senderId === sender.id && x.recipientId === recipient.id && x.roundId === roundId)
+    if (!i) {
+      i = { id: uuid(), senderId: sender.id, recipientId: recipient.id, roundId, status: 'PENDING', createdAt: Date.now(), respondedAt: null }
+      db.invitations.push(i)
+    }
+    return invitation(i)
+  }
+  function respond(viewer, id, accept) {
+    const i = db.invitations.find((x) => x.id === id)
+    if (!i) throw notFound()
+    if (i.recipientId !== viewer.id) throw new ApiError(403, 'FORBIDDEN', 'Only the recipient can respond')
+    const current = invitation(i)
+    const wanted = accept ? 'ACCEPTED' : 'DECLINED'
+    if (current.status === wanted) return current
+    if (current.status !== 'PENDING') throw new ApiError(409, 'INVITATION_CLOSED', 'Invitation is no longer pending')
+    if (accept && !findTeam(i.roundId, viewer.id)) {
+      const round = requireRound(i.roundId)
+      const pick = autoPick(round, viewer, true)
+      createTeam(round, viewer, { starterPlayerIds: pick.starters.map((x) => x.id), benchPlayerId: pick.bench.id, captainPlayerId: pick.captainPlayerId })
+    }
+    Object.assign(i, { status: wanted, respondedAt: Date.now() })
+    onChange()
+    return invitation(i)
   }
 
   // ---------- routing ----------
@@ -707,9 +806,25 @@ export function createMockCore({ minuteMs = 2000, subDelaySeconds = 60, mediaBas
   route('GET', '/rules', () => ({ ...RULES, subActivationDelaySeconds: subDelaySeconds }))
   route('GET', '/rounds', ({ query }) => {
     const status = query.get('status')
+    const period = query.get('period')
+    const format = query.get('format')
     if (status != null && !['OPEN', 'LIVE', 'SETTLED'].includes(status)) throw new ApiError(400, 'VALIDATION_FAILED', 'Invalid round status')
+    if (period != null && !['TODAY', 'TOMORROW', 'THIS_WEEK'].includes(period)) throw new ApiError(400, 'VALIDATION_FAILED', 'Invalid period')
+    if (format != null && !['QUICK', 'MATCHDAY', 'SPECIAL'].includes(format)) throw new ApiError(400, 'VALIDATION_FAILED', 'Invalid format')
+    const tz = query.get('timeZone') ?? 'UTC'
+    let dayOf
+    try {
+      const f = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' })
+      dayOf = (t) => f.format(new Date(t))
+    } catch {
+      throw new ApiError(400, 'VALIDATION_FAILED', 'Invalid timeZone')
+    }
+    const today = dayOf(Date.now())
+    const plus = (n) => dayOf(Date.now() + n * 86400_000)
+    const inPeriod = (t) => period == null || (period === 'TODAY' ? dayOf(t) === today : period === 'TOMORROW' ? dayOf(t) === plus(1) : dayOf(t) >= today && dayOf(t) <= plus(6))
     const items = db.rounds
       .filter((r) => (status == null ? ['OPEN', 'LIVE'].includes(r.status) : r.status === status))
+      .filter((r) => inPeriod(r.entryDeadline) && (format == null || roundResponse(r).format === format))
       .sort((a, b) => Number(a.status !== 'LIVE') - Number(b.status !== 'LIVE') || a.entryDeadline - b.entryDeadline || a.id.localeCompare(b.id))
     if (status === 'SETTLED') items.reverse()
     return page(items, query, roundResponse)
@@ -768,22 +883,41 @@ export function createMockCore({ minuteMs = 2000, subDelaySeconds = 60, mediaBas
     page(db.purchases.filter((x) => x.userId === user.id).sort((a, b) => b.createdAt - a.createdAt), query, ({ userId, ...x }) => ({ ...x, createdAt: iso(x.createdAt) })))
   route('GET', '/gifts', ({ query }) => {
     const category = query.get('category')
-    return page(GIFTS.filter((g) => category == null || g.category === category), query)
+    return page(GIFTS.filter((g) => category == null || g.category === category).map((g) => ({ ...g, imageUrl: media(g.imageUrl) })), query)
   })
   route('POST', '/gifts/:id/purchases', ({ p, user, headers, out, body }) =>
     idempotent(headers, user, `POST /api/v1/gifts/${p.id}/purchases`, body, 201, out, () => {
       const gift = GIFTS.find((g) => g.id === p.id)
       if (!gift) throw rule('GIFT_UNAVAILABLE', 'Gift is unavailable')
+      welcome(user)
+      if (gift.requiredPoints > ranking(user.id).points) throw rule('REWARD_LOCKED', 'Earn more leaderboard points to unlock this reward')
+      if (gift.onePerUser && db.purchases.some((x) => x.userId === user.id && x.giftId === gift.id)) throw new ApiError(409, 'REWARD_ALREADY_CLAIMED', 'This reward has already been claimed')
       const balance = db.wallets[user.id]
       if (balance < gift.priceRp) throw rule('INSUFFICIENT_RP', 'Not enough reward points')
       const now = Date.now()
       const purchase = { id: uuid(), userId: user.id, giftId: gift.id, giftName: gift.name, priceRp: gift.priceRp, voucherCode: `SST-${uuid()}`, createdAt: now }
       db.wallets[user.id] -= gift.priceRp
       db.purchases.push(purchase)
-      db.ledger.push({ id: uuid(), userId: user.id, delta: -gift.priceRp, reason: 'PURCHASE', roundId: null, purchaseId: purchase.id, createdAt: now })
+      if (gift.priceRp > 0) db.ledger.push({ id: uuid(), userId: user.id, delta: -gift.priceRp, reason: 'PURCHASE', roundId: null, purchaseId: purchase.id, createdAt: now })
       const { userId, ...pub } = purchase
       return { purchase: { ...pub, createdAt: iso(now) }, balanceRp: db.wallets[user.id] }
     }))
+  route('GET', '/rewards/catalogue', ({ user }) => {
+    welcome(user)
+    return buildCatalogue({ balanceRp: db.wallets[user.id] ?? 0, ranking: ranking(user.id), gifts: GIFTS.map((g) => ({ ...g, imageUrl: media(g.imageUrl) })), claimedGiftIds: db.purchases.filter((x) => x.userId === user.id).map((x) => x.giftId) })
+  })
+  route('GET', '/me/profile', ({ user }) => profile(user))
+  route('GET', '/me/round-history', ({ user, query }) => page(history(user.id), query))
+  route('GET', '/leaderboard', ({ query }) => page(rankings(), query))
+  route('GET', '/me/friends', ({ user, query }) => page((FRIENDS[user.username] ?? []).map(userByName).filter(Boolean).map(friend), query))
+  route('GET', '/me/invitations', ({ user, query }) =>
+    page(db.invitations.filter((i) => i.senderId === user.id || i.recipientId === user.id).sort((a, b) => b.createdAt - a.createdAt).map(invitation), query))
+  route('POST', '/friends/:friendId/invitations', ({ p, body, user, headers, out }) => {
+    if (!body?.roundId) throw new ApiError(400, 'VALIDATION_FAILED', 'roundId is required')
+    return idempotent(headers, user, `POST /api/v1/friends/${p.friendId}/invitations`, body, 201, out, () => invite(user, p.friendId, body.roundId))
+  })
+  route('POST', '/invitations/:id/accept', ({ p, user }) => respond(user, p.id, true))
+  route('POST', '/invitations/:id/decline', ({ p, user }) => respond(user, p.id, false))
   route('GET', '/dev/simulator', () => simStatus())
   route('POST', '/dev/simulator/start', ({ body }) => {
     if (!body?.roundId) throw new ApiError(400, 'VALIDATION_FAILED', 'Invalid request')
@@ -881,4 +1015,4 @@ export function createMockCore({ minuteMs = 2000, subDelaySeconds = 60, mediaBas
 }
 
 const STREAM = Symbol('stream')
-const STATE_VERSION = 1
+const STATE_VERSION = 2 // v2: reward catalogue, invitations

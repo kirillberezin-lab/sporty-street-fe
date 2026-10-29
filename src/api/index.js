@@ -35,7 +35,21 @@ export const api = {
     withIdempotency((key) => request('POST', `/teams/${teamId}/substitutions`, { body: sub, idempotencyKey: key })),
   breakdown: (teamId) => request('GET', `/teams/${teamId}/score-breakdown`),
 
+  // profile & overall leaderboard (cumulative points from settled rounds)
+  profile: () => request('GET', '/me/profile'),
+  roundHistory: (params) => request('GET', `/me/round-history${qs({ size: 100, ...params })}`),
+  overallLeaderboard: (params) => request('GET', `/leaderboard${qs({ size: 50, ...params })}`),
+
+  // friends & round invitations
+  friends: () => request('GET', '/me/friends?size=50'),
+  invitations: () => request('GET', '/me/invitations?size=50'),
+  invite: (friendId, roundId) =>
+    withIdempotency((key) => request('POST', `/friends/${friendId}/invitations`, { body: { roundId }, idempotencyKey: key })),
+  acceptInvitation: (id) => request('POST', `/invitations/${id}/accept`),
+  declineInvitation: (id) => request('POST', `/invitations/${id}/decline`),
+
   // rewards
+  catalogue: () => request('GET', '/rewards/catalogue'),
   wallet: () => request('GET', '/rewards/wallet'),
   history: (params) => request('GET', `/rewards/history${qs({ size: 50, ...params })}`),
   gifts: (params) => request('GET', `/gifts${qs({ size: 50, ...params })}`),
