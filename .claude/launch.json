@@ -1,0 +1,44 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dev-mock",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "MOCK_API=1",
+        "PUSH_RELAY=0",
+        "MOCK_API_PORT=8095",
+        "MOCK_MINUTE_MS=500",
+        "MOCK_SUB_DELAY_S=12",
+        "npx",
+        "vite",
+        "--port",
+        "5174",
+        "--strictPort"
+      ],
+      "port": 5174
+    },
+    {
+      "name": "preview-mock",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "npx vite build && MOCK_API=1 MOCK_API_PORT=8096 MOCK_MINUTE_MS=500 MOCK_SUB_DELAY_S=12 npx vite preview --port 4175 --strictPort"
+      ],
+      "port": 4175
+    },
+    {
+      "name": "dev-real",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "PUSH_RELAY=0",
+        "npx",
+        "vite",
+        "--port",
+        "5177",
+        "--strictPort"
+      ],
+      "port": 5177
+    }
+  ]
+}

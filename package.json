@@ -1,0 +1,36 @@
+{
+  "name": "sporty-street-fe",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:mock": "MOCK_API=1 vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "preview:mock": "MOCK_API=1 vite preview",
+    "mock": "node server/mock-api.mjs",
+    "backend": "bash scripts/backend.sh start",
+    "backend:reset": "bash scripts/backend.sh reset",
+    "backend:stop": "bash scripts/backend.sh stop",
+    "backend:status": "bash scripts/backend.sh status"
+  },
+  "dependencies": {
+    "@fontsource/barlow-condensed": "^5.3.0",
+    "@fontsource/inter": "^5.3.0",
+    "vue": "^3.5.44",
+    "vue-router": "^5.4.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.10",
+    "vite": "^8.3.5",
+    "vite-plugin-pwa": "^2.0.0",
+    "web-push": "^3.6.7",
+    "workbox-build": "^7.4.1",
+    "workbox-expiration": "^7.4.1",
+    "workbox-precaching": "^7.4.1",
+    "workbox-routing": "^7.4.1",
+    "workbox-strategies": "^7.4.1",
+    "workbox-window": "^7.4.1"
+  }
+}

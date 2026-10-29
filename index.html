@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SportyStreet</title>
+    <meta name="description" content="Your five. Your country. Your moment. Build a five-a-side squad of global stars, make one live sub and beat your friends." />
+    <meta name="theme-color" content="#E41827" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="SportyStreet" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon-180x180.png" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="SportyStreet" />
+    <meta property="og:title" content="Think you can beat my five? · SportyStreet" />
+    <meta property="og:description" content="Pick five global stars, make one live sub and beat your friends." />
+    <meta property="og:image" content="/og-image.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <style>
+      /* Splash (screen 1.1) is inline so it paints before the JS bundle loads. */
+      html, body { margin: 0; background: #E41827; }
+      #boot-splash {
+        position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column;
+        align-items: center; justify-content: center; gap: 18px; background: #E41827; color: #fff;
+        font-family: 'Barlow Condensed', Inter, system-ui, sans-serif; text-align: center;
+        transition: opacity .35s ease, visibility .35s;
+      }
+      #boot-splash.hide { opacity: 0; visibility: hidden; }
+      #boot-splash .mark {
+        width: 112px; height: 112px; border-radius: 32px; background: #fff; color: #E41827;
+        display: flex; align-items: center; justify-content: center; box-shadow: 0 16px 40px rgba(0,0,0,.25);
+        font: italic 900 64px/1 'Barlow Condensed', system-ui, sans-serif; text-transform: uppercase;
+        animation: boot-pop .6s cubic-bezier(.2,.9,.3,1.3) both;
+      }
+      #boot-splash .name { font: italic 900 48px/1 'Barlow Condensed', system-ui, sans-serif; }
+      #boot-splash .tag { font: italic 900 22px/1 'Barlow Condensed', system-ui, sans-serif; text-transform: uppercase; opacity: .9; }
+      #boot-splash .foot {
+        position: absolute; bottom: calc(40px + env(safe-area-inset-bottom)); left: 0; right: 0;
+        font: 500 11px Inter, system-ui, sans-serif; opacity: .75; letter-spacing: .2px;
+      }
+      #boot-splash .dots { display: flex; gap: 6px; justify-content: center; margin-bottom: 14px; }
+      #boot-splash .dots i { width: 7px; height: 7px; border-radius: 50%; background: #fff; animation: boot-dot 1.2s infinite ease-in-out; }
+      #boot-splash .dots i:nth-child(2) { animation-delay: .15s; }
+      #boot-splash .dots i:nth-child(3) { animation-delay: .3s; }
+      @keyframes boot-pop { from { transform: scale(.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+      @keyframes boot-dot { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }
+    </style>
+  </head>
+  <body>
+    <div id="boot-splash" aria-hidden="true">
+      <div class="mark">S5</div>
+      <div class="name">SportyStreet</div>
+      <div class="tag">Your five. Your country. Your moment.</div>
+      <div class="foot"><div class="dots"><i></i><i></i><i></i></div>Free to play · 18+ · Play responsibly</div>
+    </div>
+    <div id="app"></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
