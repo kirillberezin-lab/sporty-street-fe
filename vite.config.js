@@ -21,8 +21,8 @@ export default defineConfig(({ mode }) => {
     '/api': { target: apiTarget, changeOrigin: false, xfwd: true },
     '/media': { target: apiTarget, changeOrigin: false },
   }
-  // HTTPS tunnels are needed to test the PWA (install + push) on a real phone.
-  const allowedHosts = ['.trycloudflare.com', '.ngrok-free.app', '.ngrok.app', '.loca.lt']
+  // HTTPS tunnels are needed to test the PWA (install + push) on a real phone; .onrender.com is the hosted demo.
+  const allowedHosts = ['.trycloudflare.com', '.ngrok-free.app', '.ngrok.app', '.loca.lt', '.onrender.com']
 
   // Link previews (WhatsApp, Telegram) need an absolute og:image URL.
   const absoluteOgImage = {
