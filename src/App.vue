@@ -10,8 +10,11 @@ import { closeAllLive, watchLiveRounds } from './stores/live.js'
 import { handleAlerts, initNotify, loadInbox, syncPush } from './stores/notify.js'
 import { loadRounds, resetRounds, rounds } from './stores/rounds.js'
 import { resetRewards } from './stores/rewards.js'
+import { earnedRewards } from './stores/perks.js'
+import { resetCommunity } from './stores/community.js'
 import { boot, session } from './stores/session.js'
 import { toast } from './stores/ui.js'
+import { store } from './lib/util.js'
 
 const router = useRouter()
 const transition = ref('fade')
@@ -33,12 +36,17 @@ function hideSplash() {
 
 // Lock reminders while the app is open (the push relay covers the closed app).
 const reminded = new Set()
+let lastNudge = 0
 function checkLockReminders() {
   for (const r of rounds.list) {
     if (reminded.has(r.id)) continue
-    const alert = lockReminder(r, rounds.teams[r.id])
+    const team = rounds.teams[r.id]
+    // "Build your five" nudges for rounds without a squad: at most one per hour (rounds can be minutes apart).
+    if (!team && Date.now() - lastNudge < 3600_000) continue
+    const alert = lockReminder(r, team)
     if (alert) {
       reminded.add(r.id)
+      if (!team) lastNudge = Date.now()
       handleAlerts([alert])
     }
   }
@@ -64,6 +72,7 @@ watch(() => rounds.list.map((r) => `${r.id}:${r.status}:${Boolean(rounds.teams[r
 
 watch(() => session.epoch, async () => {
   closeAllLive()
+  resetCommunity()
   resetRounds()
   resetRewards()
   loadDemo()
@@ -72,10 +81,32 @@ watch(() => session.epoch, async () => {
   await loadRounds()
 })
 
+// "Reward unlocked" when a league task opens cashback or the Lucky Wheel. Seen ids are kept per user,
+// so reloads and lazily loaded standings never alert twice.
+watch(() => (session.status === 'ready' ? earnedRewards().filter((r) => r.id.startsWith('task:')) : null), (list) => {
+  if (!list) return
+  const key = `rewardsSeen:${session.username}`
+  const seen = store.get(key, [])
+  const fresh = list.filter((r) => !seen.includes(r.id))
+  if (!fresh.length) return
+  store.set(key, [...seen, ...fresh.map((r) => r.id)].slice(-200))
+  const main = fresh.find((r) => r.kind !== 'spin') ?? fresh[0]
+  const spins = fresh.filter((r) => r.kind === 'spin').length
+  handleAlerts([{
+    id: `reward:${main.id}`, type: 'result', tag: 'reward', url: `/rewards/perks/${main.offerId}`, createdAt: new Date().toISOString(),
+    title: `Reward unlocked: ${main.kind === 'spin' ? `${spins} Lucky Wheel spins` : main.label} 🎁`,
+    body: `${main.why}.${main.kind !== 'spin' && spins ? ` +${spins} Lucky Wheel spins.` : ''} Tap to claim.`,
+  }])
+})
+
 let timers = []
 onMounted(() => {
   start()
   timers.push(setInterval(checkLockReminders, 60_000))
+  // Rounds open, lock and settle on their own: keep the list fresh and the alert watcher in sync.
+  const refresh = () => session.status === 'ready' && loadRounds({ force: true }).then(watchLiveRounds).catch(() => {})
+  timers.push(setInterval(() => document.visibilityState === 'visible' && refresh(), 20_000))
+  document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && refresh())
   // Responsible play: gentle nudge after an hour in the app (Settings → Daily time reminder).
   timers.push(setTimeout(() => demo.timeReminder && toast({ title: "You've played for an hour", body: 'Time for a break? Your squad keeps running.', duration: 8000 }), 3600_000))
   if (pwa.swSupported) {
@@ -100,7 +131,7 @@ onBeforeUnmount(() => timers.forEach((t) => clearInterval(t)))
     <div class="col g16 items-center tc" style="padding: 32px 24px; margin: auto">
       <div class="mark">S5</div>
       <span class="disp" style="font-size: 34px">Can't reach the game server</span>
-      <span class="sm" style="opacity: .9; line-height: 1.5">{{ session.error?.message }}<br />Start the backend (<code>npm run backend</code>) or run <code>npm run dev:mock</code>.</span>
+      <span class="sm" style="opacity: .9; line-height: 1.5">{{ session.error?.message }}<br />Start the backend (<code>npm run backend</code>) or run <code>npm run dev:mock</code>.<template v-if="session.error?.status === 403"><br />Hosted preview: add the host to <code>ALLOWED_HOSTS</code>.</template></span>
       <button class="btn wht" style="width: 220px" @click="start"><Icon name="refresh" :size="18" />Try again</button>
     </div>
   </div>

@@ -13,6 +13,7 @@ import { pwa, swRegistration } from '../lib/pwa.js'
 import { store } from '../lib/util.js'
 import { session } from './session.js'
 import { toast } from './ui.js'
+import { asset } from '../lib/url.js'
 
 const hasNotification = typeof window !== 'undefined' && 'Notification' in window
 
@@ -92,8 +93,8 @@ async function showSystem(alert, { silent = false } = {}) {
   const options = {
     body: alert.body,
     tag: alert.tag,
-    icon: '/pwa-192x192.png',
-    badge: '/badge-96x96.png',
+    icon: asset('pwa-192x192.png'),
+    badge: asset('badge-96x96.png'),
     data: { url: alert.url ?? '/' },
     renotify: Boolean(alert.tag),
     silent,

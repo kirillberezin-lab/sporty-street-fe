@@ -1,15 +1,15 @@
 // Seed data for the local mock, mirroring the Sporty Street backend's `local` profile
 // (DemoSeed, GameSeed, RewardSeed and seed/football-2024-25.json in the backend repo).
 // Ids use the same derivation as the backend — java.util.UUID.nameUUIDFromBytes — so ids
-// are identical in the mock and in a freshly seeded backend.
-import { createHash } from 'node:crypto'
+// are identical in the mock and in a freshly seeded backend. Runs in Node and in the browser.
+import { md5 } from './md5.js'
 
 /** java.util.UUID.nameUUIDFromBytes(name.getBytes(UTF_8)) */
 export function uid(name) {
-  const b = createHash('md5').update(name, 'utf8').digest()
+  const b = md5(name)
   b[6] = (b[6] & 0x0f) | 0x30
   b[8] = (b[8] & 0x3f) | 0x80
-  const h = b.toString('hex')
+  const h = [...b].map((x) => x.toString(16).padStart(2, '0')).join('')
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`
 }
 
@@ -138,6 +138,7 @@ export const USERS = ['alice', 'bob', 'carol', 'dave', 'eve', 'frank', 'grace', 
   username,
   displayName: username[0].toUpperCase() + username.slice(1),
   countryId: i < HOME.length ? country(HOME[i]).id : null,
+  avatarUrl: `/media/avatars/${username}.jpg`, // V5__user_avatars + DemoSeed
 }))
 
 export const GIFTS = [

@@ -5,13 +5,15 @@ import { CacheFirst } from 'workbox-strategies'
 import { ExpirationPlugin } from 'workbox-expiration'
 import { queueAlert } from './lib/idb.js'
 
+const BASE = import.meta.env.BASE_URL // '/' or '/<repo>/' on GitHub Pages
+
 precacheAndRoute(self.__WB_MANIFEST)
 cleanupOutdatedCaches()
 // SPA deep links (e.g. challenge links /c/...) work offline; the API is never served from cache.
-registerRoute(new NavigationRoute(createHandlerBoundToURL('index.html'), { denylist: [/^\/api\//, /^\/media\//] }))
+registerRoute(new NavigationRoute(createHandlerBoundToURL('index.html'), { denylist: [/\/api\//, /\/media\//] }))
 // Player photos (backend /media/players/*) rarely change: cache-first, bounded.
 registerRoute(
-  ({ url }) => url.origin === self.location.origin && url.pathname.startsWith('/media/players/'),
+  ({ url }) => url.origin === self.location.origin && url.pathname.startsWith(`${BASE}media/players/`),
   new CacheFirst({ cacheName: 'player-photos', plugins: [new ExpirationPlugin({ maxEntries: 150, maxAgeSeconds: 30 * 86400 })] }),
 )
 
@@ -41,8 +43,8 @@ self.addEventListener('push', (event) => {
         body: alert.body,
         tag: alert.tag,
         renotify: Boolean(alert.tag),
-        icon: '/pwa-192x192.png',
-        badge: '/badge-96x96.png',
+        icon: `${BASE}pwa-192x192.png`,
+        badge: `${BASE}badge-96x96.png`,
         data: { url: alert.url || '/' },
         requireInteraction: Boolean(alert.requireInteraction) && !visible,
         silent: visible,
@@ -54,14 +56,16 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
-  const target = new URL(event.notification.data?.url || '/', self.location.origin)
+  // Alert urls are app routes ('/rounds/…'); the page lives under BASE.
+  const route = event.notification.data?.url || '/'
+  const target = new URL(`${BASE}${route.replace(/^\//, '')}`, self.location.origin)
   event.waitUntil(
     (async () => {
       const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
       const win = windows.find((c) => new URL(c.url).origin === self.location.origin)
       if (win) {
         await win.focus()
-        win.postMessage({ type: 'navigate', url: target.pathname + target.search })
+        win.postMessage({ type: 'navigate', url: route })
         return
       }
       await self.clients.openWindow(target.href)
@@ -73,13 +77,13 @@ self.addEventListener('notificationclick', (event) => {
 self.addEventListener('pushsubscriptionchange', (event) => {
   event.waitUntil(
     (async () => {
-      const res = await fetch('/api/v1/push/config', { credentials: 'same-origin' })
+      const res = await fetch(`${BASE}api/v1/push/config`, { credentials: 'same-origin' })
       if (!res.ok) return
       const { vapidPublicKey } = await res.json()
       const pad = '='.repeat((4 - (vapidPublicKey.length % 4)) % 4)
       const key = Uint8Array.from(atob((vapidPublicKey + pad).replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0))
       const sub = await self.registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key })
-      await fetch('/api/v1/push/subscriptions', {
+      await fetch(`${BASE}api/v1/push/subscriptions`, {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },

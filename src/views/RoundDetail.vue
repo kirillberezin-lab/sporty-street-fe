@@ -12,6 +12,7 @@ import { canShare, copyText, shareNative } from '../lib/share.js'
 import { demo } from '../stores/demo.js'
 import { loadMyTeam, loadParticipants, loadRound, phaseOf, rounds } from '../stores/rounds.js'
 import { toast, toastError } from '../stores/ui.js'
+import { appUrl } from '../lib/url.js'
 
 const route = useRoute()
 const id = route.params.id
@@ -50,7 +51,7 @@ const cta = computed(() => {
 })
 
 async function share() {
-  const url = `${location.origin}/rounds/${id}`
+  const url = appUrl(`/rounds/${id}`)
   const text = `${round.value.name} on SportyStreet — ${twist.value?.short ?? ''}. Pick five and play with me!`
   const res = await shareNative({ title: round.value.name, text, url })
   if (res === 'unsupported' && (await copyText(`${text} ${url}`))) toast({ title: 'Link copied', body: url })

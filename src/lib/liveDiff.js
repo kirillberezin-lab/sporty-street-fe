@@ -8,6 +8,10 @@ export const ALERT_PREF = {
   points: 'tactical',
   sub_moment: 'tactical',
   sub_active: 'tactical',
+  kickoff: 'tactical',
+  halftime: 'tactical',
+  twist: 'tactical',
+  rank: 'tactical',
   lock: 'lock',
   result: 'recaps',
 }
@@ -98,8 +102,9 @@ function nameList(names, max = 3) {
  * Alerts for what changed between two snapshots. Events that land in the same snapshot are
  * grouped into one alert (the simulator scores for every player at once), and the sub moment
  * is sent once per round, so the lock screen never gets a burst.
- * @param prev {{round, team, timeline}} | null  previous state (null = baseline, no alerts)
- * @param next {{round, team, timeline, result}}
+ * @param prev {{round, team, timeline, minute?, leaderboard?}} | null  previous state (null = baseline, no alerts)
+ * @param next {{round, team, timeline, result, minute?, leaderboard?}}  minute/leaderboard drive the
+ *   match-flow alerts (kick-off, half-time, twist, rank) when the stream provides a clock
  */
 export function diffLive(prev, next, now = Date.now()) {
   if (!prev?.team || !next?.team) return []
@@ -175,7 +180,72 @@ export function diffLive(prev, next, now = Date.now()) {
     }
   }
 
-  // 2. Pending substitution became active.
+  // 2. Match flow: kick-off, half-time, the twist window, big moves in the table.
+  if (isOpen(prev.round?.status) && isLive(round?.status)) {
+    const captain = team.starters?.find((s) => s.player?.id === team.captainPlayerId)?.player
+    alerts.push({
+      id: `kickoff:${roundId}`,
+      type: 'kickoff',
+      title: 'Kick-off! Your five is live ⚽',
+      body: `${round.name}: squads are locked${captain ? `, ${shortName(captain.name)} wears the armband` : ''}. Your one sub is ready on the bench.`,
+      tag: `flow-${roundId}`,
+      url: roundUrl(roundId, 'live'),
+    })
+  }
+  const was = prev.minute
+  const min = next.minute
+  if (was != null && min != null && isLive(round?.status)) {
+    if (was < 45 && min >= 45 && min < 90) {
+      alerts.push({
+        id: `ht:${roundId}`,
+        type: 'halftime',
+        title: `Half-time · ${team.score ?? 0} pts`,
+        body: `${team.rank ? `You're #${team.rank}. ` : ''}${(team.subsRemaining ?? 0) > 0 ? 'Your sub is still unused — the second half decides it.' : 'Second half coming up.'}`,
+        tag: `flow-${roundId}`,
+        url: roundUrl(roundId, 'live'),
+      })
+    }
+    const from = rules?.twist?.fromMatchMinute
+    if (from != null && was < from && min >= from && min < 90) {
+      alerts.push({
+        id: `twist:${roundId}`,
+        type: 'twist',
+        title: `${from}' · Goals now count ×${rules.twist.multiplier ?? 2} 🔥`,
+        body: `The late-goal twist is on until full time.${(team.subsRemaining ?? 0) > 0 && team.bench?.player ? ` Last call to bring ${shortName(team.bench.player.name)} on.` : ''}`,
+        tag: `flow-${roundId}`,
+        url: roundUrl(roundId, (team.subsRemaining ?? 0) > 0 ? 'live?sub=1' : 'live'),
+      })
+    }
+  }
+  const before = prev.team.rank
+  const after = team.rank
+  // Everyone shares 1st at 0 pts before the first event, so only moves once points are on the board.
+  if (before && after && before !== after && isLive(round?.status) && (prev.team.score ?? 0) > 0) {
+    const board = next.leaderboard ?? []
+    const above = board.find((e) => e.rank === after - 1 && e.teamId !== team.id)
+    const passer = board.find((e) => e.rank < after && (prev.leaderboard ?? []).find((p) => p.teamId === e.teamId)?.rank > before)
+    if (after < before && after <= 3) {
+      alerts.push({
+        id: `rank:${roundId}:${after}:${team.score}`,
+        type: 'rank',
+        title: after === 1 ? `You're top of the table! 🏆 ${team.score} pts` : `Up to #${after} ▲`,
+        body: after === 1 ? 'Hold on to it until full time.' : above ? `${above.displayName} is next at ${above.score} pts.` : 'Keep climbing.',
+        tag: `rank-${roundId}`,
+        url: roundUrl(roundId, 'standings'),
+      })
+    } else if (before === 1 && after > 1) {
+      alerts.push({
+        id: `rank:${roundId}:${after}:${team.score}`,
+        type: 'rank',
+        title: `Knocked off the top · #${after}`,
+        body: `${passer ? `${passer.displayName} overtook you with ${passer.score} pts.` : 'Someone overtook you.'}${(team.subsRemaining ?? 0) > 0 ? ' Time for your sub?' : ''}`,
+        tag: `rank-${roundId}`,
+        url: roundUrl(roundId, 'standings'),
+      })
+    }
+  }
+
+  // 3. Pending substitution became active.
   const pending = prev.team.pendingSubstitution
   if (pending && !team.pendingSubstitution && starterIds.has(pending.incomingPlayerId)) {
     alerts.push({
@@ -188,7 +258,7 @@ export function diffLive(prev, next, now = Date.now()) {
     })
   }
 
-  // 3. Full time.
+  // 4. Full time.
   const wasSettled = isSettled(prev.round?.status)
   if (!wasSettled && isSettled(round?.status)) {
     const result = next.result

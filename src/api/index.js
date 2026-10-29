@@ -1,5 +1,5 @@
 // Endpoints from the backend OpenAPI snapshot (Sporty Street demo API v1).
-import { API_BASE, request, withIdempotency } from './client.js'
+import { API_BASE, openEventSource, request, withIdempotency } from './client.js'
 
 const qs = (params = {}) => {
   const q = new URLSearchParams()
@@ -23,6 +23,7 @@ export const api = {
   leaderboard: (roundId, params) => request('GET', `/rounds/${roundId}/leaderboard${qs({ size: 100, ...params })}`),
   result: (roundId) => request('GET', `/rounds/${roundId}/result`),
   streamUrl: (roundId) => `${API_BASE}/rounds/${roundId}/stream`,
+  openStream: (roundId) => openEventSource(`${API_BASE}/rounds/${roundId}/stream`),
 
   // teams
   autoPick: (roundId, preferHomeHero = true) => request('POST', `/rounds/${roundId}/auto-pick`, { body: { preferHomeHero } }),
@@ -41,6 +42,14 @@ export const api = {
   purchase: (giftId) => withIdempotency((key) => request('POST', `/gifts/${giftId}/purchases`, { body: {}, idempotencyKey: key })),
   purchases: (params) => request('GET', `/me/purchases${qs({ size: 50, ...params })}`),
 
+  // community (local profile, read-only simulated content — docs/community-api.md)
+  leagues: (scope = 'MINE') => request('GET', `/leagues${qs({ scope, size: 50 })}`),
+  league: (id) => request('GET', `/leagues/${id}`),
+  leagueTable: (id) => request('GET', `/leagues/${id}/table${qs({ size: 100 })}`),
+  rivalries: (id) => request('GET', `/leagues/${id}/rivalries`),
+  banter: (id) => request('GET', `/leagues/${id}/banter${qs({ size: 50 })}`),
+  managers: (roundId, filter = 'ALL') => request('GET', `/backing/managers${qs({ roundId, filter, size: 50 })}`),
+
   // push (served by the dev relay until the backend implements it)
   pushConfig: () => request('GET', '/push/config'),
   pushSubscribe: (subscription, prefs) => request('POST', '/push/subscriptions', { body: { subscription, prefs } }),
@@ -56,5 +65,7 @@ export const api = {
     simulator: () => request('GET', '/dev/simulator'),
     simulatorStart: (roundId) => request('POST', '/dev/simulator/start', { body: { roundId } }),
     simulatorStop: () => request('POST', '/dev/simulator/stop'),
+    // static build only: a friend's squad from a challenge link joins this device's round
+    ghostTeam: (challenge) => request('POST', '/dev/ghost-teams', { body: challenge }),
   },
 }

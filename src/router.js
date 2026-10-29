@@ -25,6 +25,7 @@ const routes = [
   { path: '/back', component: () => import('./views/BackManager.vue') },
   { path: '/rewards/missions', component: () => import('./views/Missions.vue') },
   { path: '/rewards/vouchers', component: () => import('./views/Vouchers.vue') },
+  { path: '/rewards/perks/:id', component: () => import('./views/RewardOffer.vue') },
   { path: '/rewards/vouchers/:id', component: () => import('./views/Voucher.vue') },
   { path: '/notifications', component: () => import('./views/Notifications.vue') },
   { path: '/settings', component: () => import('./views/Settings.vue') },
@@ -33,9 +34,19 @@ const routes = [
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ]
 
-export const router = createRouter({ history: createWebHistory(), routes })
+export const router = createRouter({ history: createWebHistory(import.meta.env.BASE_URL), routes })
 
 preventBackLoops(router)
+
+// A screen's code chunk can fail to load after a deploy or a dev-server restart (stale hashes). The
+// router then cancels the navigation silently and the tab "does nothing" — reload once into the target.
+const CHUNK_ERROR = /Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module|Unable to preload CSS/i
+router.onError((error, to) => {
+  if (!CHUNK_ERROR.test(error?.message ?? '') || sessionStorage.getItem('chunkReload') === to.fullPath) return
+  sessionStorage.setItem('chunkReload', to.fullPath)
+  location.assign(router.resolve(to.fullPath).href)
+})
+router.afterEach(() => sessionStorage.removeItem('chunkReload'))
 
 router.beforeEach((to) => {
   if (!session.onboarded && to.path !== '/welcome' && !to.meta.public) {

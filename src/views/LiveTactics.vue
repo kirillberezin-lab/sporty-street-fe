@@ -8,6 +8,7 @@ import Avatar from '../components/Avatar.vue'
 import BottomSheet from '../components/BottomSheet.vue'
 import Flag from '../components/Flag.vue'
 import Icon from '../components/Icon.vue'
+import MatchCenter from '../components/MatchCenter.vue'
 import TopBar from '../components/TopBar.vue'
 import { countdown, signed } from '../lib/format.js'
 import { groupEvents, isOpen, isSettled, lineKind } from '../lib/liveDiff.js'
@@ -222,6 +223,8 @@ function playerTone(s) {
           </div>
           <button class="btn md" :disabled="!canSub" @click="subOpen = true">{{ team.subsRemaining ? (windowOpen ? 'Use my substitution' : 'Sub window closed') : 'Substitution used' }}</button>
         </div>
+
+        <MatchCenter :matches="live.matches" :minute="minute" :settled="settled" :my-ids="new Set(players.keys())" />
 
         <div class="card" style="padding: 2px 14px">
           <div v-if="!events.length" class="li"><span class="sm m">No points events yet — appearances are in. Goals, assists and cards show up here.</span></div>

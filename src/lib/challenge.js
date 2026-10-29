@@ -2,6 +2,7 @@
 // (design 3.6). The backend has no challenges endpoint, so the link carries everything needed:
 // round, team (to find the challenger on the leaderboard) and the five player ids, packed in
 // ~170 url-safe characters.
+import { appUrl } from './url.js'
 const VERSION = 1
 
 const hexToBytes = (uuid) => Uint8Array.from((uuid ?? '').replace(/-/g, '').padEnd(32, '0').match(/../g), (h) => parseInt(h, 16))
@@ -49,4 +50,4 @@ export function decodeChallenge(code) {
   }
 }
 
-export const challengeUrl = (code) => `${location.origin}/c/${code}`
+export const challengeUrl = (code) => appUrl(`/c/${code}`)

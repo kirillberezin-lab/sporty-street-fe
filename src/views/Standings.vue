@@ -4,6 +4,7 @@ import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import Avatar from '../components/Avatar.vue'
 import Icon from '../components/Icon.vue'
+import MatchCenter from '../components/MatchCenter.vue'
 import TopBar from '../components/TopBar.vue'
 import { isLive, isSettled } from '../lib/liveDiff.js'
 import { twistCopy } from '../lib/rules.js'
@@ -79,7 +80,7 @@ function move(e) {
         <div v-for="e in rows" :key="e.teamId" class="tr" :class="{ me: e.teamId === myTeamId, rival: rivals.has(e.teamId) }">
           <span class="rk">{{ e.rank }}</span>
           <span class="mv" :class="move(e).cls">{{ move(e).text }}</span>
-          <Avatar :name="e.displayName" size="sm" />
+          <Avatar :name="e.displayName" :src="e.avatarUrl" size="sm" />
           <div class="col g2 f1">
             <b class="ellipsis">{{ e.teamId === myTeamId ? `${e.displayName} (you)` : e.displayName }}</b>
             <span v-if="rivals.has(e.teamId)" class="xs gold b">Your rival</span>
@@ -88,6 +89,7 @@ function move(e) {
         </div>
       </TransitionGroup>
 
+      <MatchCenter v-if="!isSettled(round?.status) || live.matches.some((m) => m.events.length)" :matches="live.matches" :minute="minute" :settled="isSettled(round?.status)" />
       <div v-if="twist?.from != null && isLive(round?.status) && (minute == null || minute < twist.from)" class="card row" style="padding: 10px 12px">
         <span class="pill y">Next twist</span>
         <span class="sm f1"><b>{{ twist.title }}</b> starts at {{ twist.from }}'</span>

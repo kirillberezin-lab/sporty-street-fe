@@ -5,6 +5,7 @@ import { clubColor, hashColor, initials } from '../lib/players.js'
 const props = defineProps({
   player: { type: Object, default: null },
   name: { type: String, default: '' },
+  src: { type: String, default: null }, // profile photo (avatarUrl); players use player.imageUrl
   color: { type: String, default: '' },
   size: { type: String, default: '' }, // xs | sm | md | lg | xl
   ring: { type: Boolean, default: false },
@@ -15,7 +16,7 @@ const props = defineProps({
 const failed = ref(false)
 const label = computed(() => props.player?.name ?? props.name)
 const bg = computed(() => props.color || (props.player ? clubColor(props.player.clubName) : hashColor(label.value)))
-const img = computed(() => (!failed.value && props.player?.imageUrl) || null)
+const img = computed(() => (!failed.value && (props.src || props.player?.imageUrl)) || null)
 </script>
 
 <template>

@@ -1,0 +1,51 @@
+# Static demo on GitHub Pages: the game server runs in the browser (VITE_STATIC=1).
+# Repo → Settings → Pages → Source: "GitHub Actions". Pushing to main deploys.
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build
+        run: npm run build:static
+        env:
+          # Project sites live under /<repo>/; a <user>.github.io repo or a custom domain uses /.
+          BASE_PATH: ${{ vars.BASE_PATH || (endsWith(github.event.repository.name, '.github.io') && '/' || format('/{0}/', github.event.repository.name)) }}
+          PUBLIC_URL: ${{ vars.PUBLIC_URL || format('https://{0}.github.io', github.repository_owner) }}
+          VITE_PARTNER_REFER_URL: ${{ vars.VITE_PARTNER_REFER_URL }}
+          VITE_PARTNER_FREEBET_URL: ${{ vars.VITE_PARTNER_FREEBET_URL }}
+          VITE_PARTNER_CASHBACK_URL: ${{ vars.VITE_PARTNER_CASHBACK_URL }}
+          VITE_PARTNER_WHEEL_URL: ${{ vars.VITE_PARTNER_WHEEL_URL }}
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,14 +1,15 @@
 <script setup>
-// Leagues hub (design 6.1). Leagues are not in the backend yet — local demo data.
-import { computed, ref } from 'vue'
+// Leagues hub (design 6.1). Leagues, members and creators come from the backend's community API
+// (read-only, simulated content); joining by code or creating a league is a local preview.
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Avatar from '../components/Avatar.vue'
 import BottomSheet from '../components/BottomSheet.vue'
-import Flag from '../components/Flag.vue'
 import Icon from '../components/Icon.vue'
 import TabBar from '../components/TabBar.vue'
-import { compact } from '../lib/format.js'
-import { CREATORS, demo, joinCreator, joinLeague } from '../stores/demo.js'
+import { compact, ordinal } from '../lib/format.js'
+import { community, loadLeagues } from '../stores/community.js'
+import { joinCreator, joinLeague } from '../stores/demo.js'
 import { session } from '../stores/session.js'
 import { toast } from '../stores/ui.js'
 
@@ -18,33 +19,32 @@ const route = useRoute()
 const code = ref(typeof route.query.join === 'string' ? route.query.join.toUpperCase() : '')
 const joinOpen = ref(Boolean(code.value))
 
-const leagues = computed(() => demo.leagues ?? [])
-const discover = computed(() => CREATORS.filter((c) => !leagues.value.some((l) => l.creatorId === c.id)))
+onMounted(loadLeagues)
+watch(() => session.epoch, loadLeagues)
 
-function standing(l) {
-  if (!l.members) return null
-  const sorted = [...l.members].sort((a, b) => b.pts - a.pts)
-  const i = sorted.findIndex((m) => m.me)
-  const lead = sorted[0]
-  return { rank: i + 1, size: sorted.length, line: i === 0 ? `You lead by ${lead.pts - (sorted[1]?.pts ?? 0)}` : `${lead.name} leads by ${lead.pts - sorted[i].pts}`, others: sorted.filter((m) => !m.me).slice(0, 4) }
-}
+const mine = computed(() => community.mine)
+const friendsLeagues = computed(() => mine.value.filter((l) => l.type !== 'CREATOR'))
+const creatorLeagues = computed(() => mine.value.filter((l) => l.type === 'CREATOR'))
+const linkOf = (l) => (l.type === 'CREATOR' && l.slug ? `/leagues/creator/${l.slug}` : `/leagues/${l.id}`)
+const typeLabel = { FRIENDS: 'FRIENDS', WORK: 'WORK', CREATOR: 'CREATOR' }
 
 function join() {
   if (!/^[A-Z0-9]{2,}-[A-Z0-9]{2,}$/i.test(code.value.trim())) {
     toast({ title: 'Check the code', body: 'Invite codes look like LAGOS-5K.', tone: 'error' })
     return
   }
-  const { league, already } = joinLeague(code.value)
+  const { league, already } = joinLeague(code.value, mine.value)
   joinOpen.value = false
   code.value = ''
   toast({ title: already ? 'Already a member' : `Joined ${league.name}`, tone: 'success' })
-  router.push(`/leagues/${league.id}`)
+  loadLeagues()
+  router.push(linkOf(league))
 }
-function joinC(c) {
-  joinCreator(c.id)
-  toast({ title: `Joined ${c.name} League`, body: 'Beat the creator this round for bragging rights.', tone: 'success' })
+function joinC(l) {
+  joinCreator(l.id)
+  loadLeagues()
+  toast({ title: `Joined ${l.name}`, body: `Beat ${l.creator?.displayName ?? 'the creator'} this round for bragging rights.`, tone: 'success' })
 }
-const creatorOf = (l) => CREATORS.find((c) => c.id === l.creatorId)
 </script>
 
 <template>
@@ -60,56 +60,50 @@ const creatorOf = (l) => CREATORS.find((c) => c.id === l.creatorId)
     </header>
     <main class="ct">
       <span class="xs b m up">My leagues</span>
-      <template v-for="l in leagues" :key="l.id">
-        <RouterLink v-if="l.type === 'FRIENDS' && l.members" :to="`/leagues/${l.id}`" class="card dark col g12 press">
-          <div class="row between">
-            <div class="row g6"><span class="pill w">FRIENDS</span><b>{{ l.name }}</b></div>
-            <span class="pill rr">{{ standing(l).rank }}{{ ['st', 'nd', 'rd'][standing(l).rank - 1] ?? 'th' }} / {{ standing(l).size }}</span>
-          </div>
-          <div class="row g6">
-            <div class="row" style="gap: 0">
-              <Avatar v-for="(m, i) in standing(l).others" :key="m.name" :name="m.name" :color="m.color" size="xs" :style="{ marginLeft: i ? '-6px' : 0, boxShadow: '0 0 0 2px var(--dark)' }" />
-            </div>
-            <span class="xs f1 soft-w">{{ standing(l).line }}{{ l.rounds ? ` · season ends in ${Math.max(1, l.rounds - 8)} rounds` : ' · new league' }}</span>
-          </div>
-        </RouterLink>
-        <RouterLink v-else-if="l.type === 'CREATOR'" :to="`/leagues/creator/${l.creatorId}`" class="card row">
-          <Avatar :name="creatorOf(l)?.name" :color="creatorOf(l)?.bg" />
-          <div class="col g2 f1"><div class="row g4"><b class="sm">{{ l.name }}</b><span class="pill b" style="height: 18px; font-size: 10px">CREATOR</span></div><span class="xs m">{{ compact(l.size) }} members</span></div>
-          <span class="sm b">#{{ compact(l.myRank) }}</span>
-        </RouterLink>
-        <div v-else-if="l.type === 'NATIONAL'" class="card row">
-          <div class="ibox" style="background: var(--bg); font-size: 26px"><Flag :country="session.countryName ?? ''" :size="26" /></div>
-          <div class="col g2 f1"><b class="sm">{{ l.name }}</b><span class="xs m">Auto-joined · {{ compact(l.size) }} players</span></div>
-          <span class="sm b">Top {{ l.myTop }}%</span>
-        </div>
-        <div v-else class="card row">
-          <div class="ibox" style="background: var(--blue-50); color: var(--blue)"><Icon name="users" :size="22" /></div>
-          <div class="col g2 f1"><b class="sm">{{ l.name }}</b><span class="xs m">{{ l.size }} members · {{ l.format?.toLowerCase() }} league</span></div>
-          <span class="sm b">{{ l.myRank }}th</span>
-        </div>
+      <template v-if="!community.loaded && !community.error">
+        <div class="skel" style="height: 120px" /><div class="skel" style="height: 72px" />
       </template>
+      <div v-else-if="community.error && !mine.length" class="empty"><b style="color: var(--ink)">Leagues unavailable</b><span class="sm">{{ community.error.message }}</span><button class="btn sm" @click="loadLeagues">Try again</button></div>
+
+      <RouterLink v-for="l in friendsLeagues" :key="l.id" :to="linkOf(l)" class="card dark col g12 press league" :style="l.imageUrl ? { '--cover': `url(${l.imageUrl})` } : null">
+        <div class="row between">
+          <div class="row g6"><span class="pill w">{{ typeLabel[l.type] ?? l.type }}</span><b>{{ l.name }}</b></div>
+          <span v-if="l.myRank" class="pill rr">{{ ordinal(l.myRank) }} / {{ l.memberCount }}</span>
+        </div>
+        <div class="row g6">
+          <div class="row" style="gap: 0">
+            <Avatar v-for="(m, i) in l.memberPreview.filter((p) => !p.isYou).slice(0, 4)" :key="m.id" :name="m.displayName" :src="m.avatarUrl" size="xs" :style="{ marginLeft: i ? '-6px' : 0, boxShadow: '0 0 0 2px var(--dark)' }" />
+          </div>
+          <span class="xs f1 soft-w ellipsis">{{ l.format === 'SEASON' ? (l.roundsRemaining ? `${l.roundsRemaining} of ${l.seasonRounds} rounds left` : 'New season') : 'Fresh table every round' }}{{ l.description ? ` · ${l.description}` : '' }}</span>
+        </div>
+      </RouterLink>
+
+      <RouterLink v-for="l in creatorLeagues" :key="l.id" :to="linkOf(l)" class="card row">
+        <Avatar :name="l.creator?.displayName ?? l.name" :src="l.avatarUrl" />
+        <div class="col g2 f1"><div class="row g4"><b class="sm">{{ l.name }}</b><span class="pill b" style="height: 18px; font-size: 10px">CREATOR</span></div><span class="xs m">{{ l.memberCount }} members{{ l.creator?.fans ? ` · ${compact(l.creator.fans)} fans` : '' }}</span></div>
+        <span v-if="l.myRank" class="sm b">#{{ l.myRank }}</span>
+      </RouterLink>
 
       <RouterLink to="/back" class="card soft row">
         <div class="ibox" style="background: #fff; color: var(--red)"><Icon name="trophy" :size="22" /></div>
-        <div class="col g2 f1"><b class="sm">Back a manager</b><span class="xs m">No squad? Back a friend with free fan points.</span></div>
+        <div class="col g2 f1"><b class="sm">Back a manager</b><span class="xs m">No squad? Back a friend or a creator with free fan points.</span></div>
         <Icon name="chevron" :size="18" class="m" />
       </RouterLink>
 
-      <template v-if="discover.length">
+      <template v-if="community.discover.length">
         <div class="sec-t" style="margin-top: 4px"><span class="h3">Creator leagues</span><span class="xs m">Discover</span></div>
         <div class="hscroll">
-          <div v-for="c in discover" :key="c.id" class="card col g6 items-center tc" style="width: 150px">
-            <RouterLink :to="`/leagues/creator/${c.id}`" class="col g6 items-center">
-              <Avatar :name="c.name" :color="c.bg" size="lg" />
-              <b class="sm">{{ c.name }}</b>
-              <span class="xs m">{{ compact(c.fans) }} fans</span>
+          <div v-for="l in community.discover" :key="l.id" class="card col g6 items-center tc" style="width: 150px">
+            <RouterLink :to="linkOf(l)" class="col g6 items-center">
+              <Avatar :name="l.creator?.displayName ?? l.name" :src="l.avatarUrl" size="lg" />
+              <b class="sm">{{ l.creator?.displayName ?? l.name }}</b>
+              <span class="xs m">{{ compact(l.creator?.fans ?? l.memberCount) }} fans</span>
             </RouterLink>
-            <button class="btn xs sec" @click="joinC(c)">Join</button>
+            <button class="btn xs sec" @click="joinC(l)">Join</button>
           </div>
         </div>
       </template>
-      <span class="xs m tc">Leagues are a demo preview — the league service isn't in the backend yet.</span>
+      <span class="xs m tc">Leagues show simulated preview content{{ community.mode === 'bundled' ? ' (bundled — this server has no community API yet)' : '' }}. Joining and creating leagues stay on this device.</span>
     </main>
     <TabBar />
 
@@ -121,3 +115,8 @@ const creatorOf = (l) => CREATORS.find((c) => c.id === l.creatorId)
     </BottomSheet>
   </div>
 </template>
+
+<style scoped>
+.league { position: relative; overflow: hidden; isolation: isolate; }
+.league::before { content: ''; position: absolute; inset: 0; z-index: -1; background: linear-gradient(90deg, rgba(20, 23, 28, .96) 35%, rgba(20, 23, 28, .55)), var(--cover, none) center / cover; }
+</style>

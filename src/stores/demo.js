@@ -1,6 +1,6 @@
-// Features from the design that the backend does not implement yet (README: "Intentionally absent:
-// leagues, backing managers, missions"). They run on local, per-user demo data so every screen works;
-// where possible they use real data (leaderboards for backing, results for missions).
+// Actions the backend does not implement (its community API is read-only): creating/joining leagues,
+// backing managers with fan points, missions, challenges. They run on local, per-user demo data on top
+// of the server's content (stores/community.js); results come from real rounds where possible.
 import { reactive, watch } from 'vue'
 import { inviteCode, store } from '../lib/util.js'
 import { session } from './session.js'
@@ -12,7 +12,8 @@ function seed() {
     fanPoints: 500,
     weeklyGrantAt: Date.now(),
     backings: [], // { id, roundId, teamId, name, target, rankLimit|null, multiplier, stake, status, payout, createdAt }
-    leagues: null, // filled lazily (depends on profile)
+    localLeagues: [], // created or joined by code on this device, in the API's LeagueCard shape
+    joinedCreators: [], // creator league ids joined as a preview
     challenges: [], // accepted challenge links: { id, roundId, teamId, name, players, createdAt }
     subs: {}, // roundId -> { outgoingPlayerId, incomingPlayerId, effectiveAt } (TeamSnapshot keeps no sub history)
     claimed: {}, // missionId -> iso
@@ -35,7 +36,6 @@ export function loadDemo() {
     demo.fanPoints += 100
     demo.weeklyGrantAt = Date.now()
   }
-  if (!demo.leagues) demo.leagues = seedLeagues()
   stopWatch = watch(demo, (v) => store.set(`demo:${session.username}`, v), { deep: true })
 }
 
@@ -47,13 +47,7 @@ function touchStreak() {
 }
 
 // ---------- leagues (design 6.x) ----------
-const FRIENDS = [
-  ['Ada FC', '#7C3AED', 1284, 6], ['Tunde XI', '#0F766E', 1190, 3], ['Folake United', '#DB2777', 1104, 1],
-  ["Emeka's Eagles", '#CA8A04', 1032, 1], ['Bolu Bros', '#2563EB', 987, 0], ['Kemi Kickers', '#B45309', 951, 1],
-  ['Zainab Strikers', '#0E7490', 903, 0], ['Ikenna FC', '#475569', 880, 0], ['Sade Squad', '#9333EA', 842, 0],
-  ['Musa Masters', '#15803D', 815, 0], ['Uche United', '#BE123C', 760, 0],
-]
-
+// Creator extras the API does not carry (bio line, the take, the five to copy), keyed by league slug.
 export const CREATORS = [
   { id: 'mr-pundit', name: 'Mr. Pundit', initials: 'MP', bg: 'linear-gradient(135deg,#F59E0B,#DC2626)', fans: 124000, bio: 'Football analyst · 1.2M followers',
     take: 'Late goals ×2? I want finishers who play 90 minutes. Kane is my captain, Gavi my sub-bait.', five: ['Mohamed Salah', 'Harry Kane', 'Pedri', 'Rúben Dias', 'Alisson Becker'] },
@@ -65,71 +59,80 @@ export const CREATORS = [
     take: 'Defenders who take set pieces are the cheat code.', five: ['Trent Alexander-Arnold', 'Pedri', 'Luka Modrić', 'Mohamed Salah', 'Thibaut Courtois'] },
 ]
 
-function seedLeagues() {
-  const me = `${session.user?.displayName ?? 'My'}'s Five`
-  const friends = [...FRIENDS.slice(0, 1), [me, '#5B3A29', 1262, 4, true], ...FRIENDS.slice(1)]
-  const list = [
-    { id: 'lagos-ballers', type: 'FRIENDS', name: 'Lagos Ballers', code: 'LAGOS-5K', format: 'Season', rounds: 14, members: friends.map(([name, color, pts, wins, me]) => ({ name, color, pts, wins, me: Boolean(me) })) },
-    { id: 'office-five', type: 'WORK', name: 'Office Five · Opennet', code: 'OFFICE-7Q', format: 'Every round', rounds: 0, size: 28, myRank: 7 },
-    { id: 'mr-pundit', type: 'CREATOR', name: 'Mr. Pundit League', creatorId: 'mr-pundit', size: 124000, myRank: 14800 },
-  ]
-  if (session.countryName) list.push({ id: 'national', type: 'NATIONAL', name: `${session.countryName} national`, size: 1900000, myTop: 5 })
-  return list
+function me(score = 0) {
+  const u = session.user
+  return { profile: { id: u?.id ?? 'me', displayName: u?.displayName ?? 'You', teamName: `${u?.displayName ?? 'My'}'s Five`, avatarUrl: u?.avatarUrl ?? null, creator: false, fans: 0, isYou: true }, rank: 1, score, wins: 0 }
+}
+function localCard({ name, format = 'SEASON', code, members }) {
+  members.sort((a, b) => b.score - a.score).forEach((m, i) => (m.rank = i + 1))
+  return {
+    id: `local-${Date.now()}`, slug: null, name, type: 'FRIENDS', format, inviteCode: code ?? inviteCode(name), imageUrl: null, avatarUrl: null,
+    creator: null, description: 'Created on this device', memberCount: members.length, joined: true, myRank: members.find((m) => m.profile.isYou).rank,
+    seasonRounds: format === 'SEASON' ? 14 : 0, roundsRemaining: format === 'SEASON' ? 14 : 0, memberPreview: members.slice(0, 4).map((m) => m.profile),
+    members, local: true, createdAt: new Date().toISOString(),
+  }
 }
 
-export function createLeague({ name, format, roundTypes, milestone, code }) {
-  const league = {
-    id: `l-${Date.now()}`, type: 'FRIENDS', name, code: code ?? inviteCode(name), format, roundTypes, milestone, rounds: 0,
-    members: [{ name: `${session.user?.displayName ?? 'My'}'s Five`, color: '#5B3A29', pts: 0, wins: 0, me: true }],
-    createdAt: new Date().toISOString(),
-  }
-  demo.leagues.unshift(league)
+export function createLeague({ name, format, code }) {
+  const league = localCard({ name, format: /round/i.test(format ?? '') ? 'ROUND' : 'SEASON', code, members: [me()] })
+  demo.localLeagues.unshift(league)
   return league
 }
 
-export function joinLeague(code) {
+/** Server leagues are read-only, so a code joins a local preview league. */
+export function joinLeague(code, known = []) {
   const clean = code.trim().toUpperCase()
-  const existing = demo.leagues.find((l) => l.code === clean)
+  const existing = [...demo.localLeagues, ...known].find((l) => l.inviteCode === clean)
   if (existing) return { league: existing, already: true }
-  const league = createLeague({ name: `${clean.split('-')[0][0]}${clean.split('-')[0].slice(1).toLowerCase()} League`, format: 'Season', code: clean })
-  league.members.unshift(...FRIENDS.slice(3, 7).map(([name, color, pts, wins]) => ({ name, color, pts: Math.round(pts / 3), wins })))
-  league.members.at(-1).pts = 0
+  const friends = ['Ada', 'Tunde', 'Folake', 'Emeka'].map((n, i) => ({ profile: { id: `f${i}`, displayName: n, teamName: `${n} FC`, avatarUrl: null, creator: false, fans: 0, isYou: false }, rank: 0, score: 120 - i * 25, wins: 2 - Math.min(i, 2) }))
+  const league = localCard({ name: `${clean.split('-')[0][0]}${clean.split('-')[0].slice(1).toLowerCase()} League`, code: clean, members: [...friends, me()] })
+  demo.localLeagues.unshift(league)
   return { league, already: false }
 }
 
-export function joinCreator(creatorId) {
-  const c = CREATORS.find((x) => x.id === creatorId)
-  if (!c || demo.leagues.some((l) => l.creatorId === creatorId)) return
-  demo.leagues.push({ id: c.id, type: 'CREATOR', name: `${c.name} League`, creatorId: c.id, size: c.fans + 1, myRank: c.fans + 1 })
+export function joinCreator(leagueId) {
+  if (!demo.joinedCreators.includes(leagueId)) demo.joinedCreators.push(leagueId)
 }
 
 // ---------- back a manager (design 7.x) ----------
-/** Transparent target + multiplier from the manager's current position. */
-export function backingOffer(entry, total) {
-  if (!entry || !total) return null
-  const pct = entry.rank / total
-  if (pct <= 0.34 && total >= 3) return { target: 'Win the round', rankLimit: 1, multiplier: 3 }
-  return { target: 'Finish top half', rankLimit: Math.max(1, Math.ceil(total / 2)), multiplier: 2 }
+// Targets and multipliers come from the API's manager cards; fan points and backings are local.
+export const TARGETS = {
+  TOP_HALF: { label: 'Finish top half', share: 0.5 },
+  TOP_25_PERCENT: { label: 'Finish top 25%', share: 0.25 },
+  TOP_10_PERCENT: { label: 'Finish top 10%', share: 0.1 },
 }
+export const targetLabel = (t) => TARGETS[t]?.label ?? String(t ?? '').replace(/_/g, ' ').toLowerCase()
 
-export function back({ roundId, entry, offer, stake }) {
+export function back({ roundId, manager, stake }) {
   if (stake > demo.fanPoints) throw new Error('Not enough fan points')
   demo.fanPoints -= stake
-  const b = { id: `b-${Date.now()}`, roundId, teamId: entry.teamId, name: entry.displayName, ...offer, stake, status: 'open', payout: 0, createdAt: new Date().toISOString() }
+  const p = manager.profile
+  const b = { id: `b-${Date.now()}`, roundId, profileId: p.id, name: p.displayName, avatarUrl: p.avatarUrl, target: manager.target, multiplier: manager.multiplier, stake, status: 'open', payout: 0, createdAt: new Date().toISOString() }
   demo.backings.unshift(b)
   return b
 }
 
-/** Called with final standings once a round is settled. */
+function seeded(text) {
+  let h = 2166136261
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619)
+  return (h >>> 0) / 4294967296
+}
+
+/**
+ * Called with final standings once a round is settled. Managers who are real players in the round
+ * settle on their real rank; community profiles without a squad get a seeded simulated outcome.
+ */
 export function resolveBackings(roundId, standings) {
+  const total = standings.length
   for (const b of demo.backings) {
     if (b.roundId !== roundId || b.status !== 'open') continue
-    const entry = standings.find((e) => e.teamId === b.teamId)
-    if (!entry) continue
-    const hit = entry.rank <= b.rankLimit
+    const share = TARGETS[b.target]?.share ?? 0.5
+    const entry = standings.find((e) => e.displayName === b.name)
+    const hit = entry && total ? entry.rank <= Math.max(1, Math.ceil(total * share)) : seeded(`${roundId}:${b.profileId}`) < share
     b.status = hit ? 'won' : 'lost'
-    b.finalRank = entry.rank
-    b.payout = hit ? b.stake * b.multiplier : 0
+    b.finalRank = entry?.rank ?? null
+    b.simulated = !entry
+    b.payout = hit ? Math.round(b.stake * b.multiplier) : 0
     if (hit) demo.fanPoints += b.payout
   }
 }

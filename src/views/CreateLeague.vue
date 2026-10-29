@@ -9,6 +9,7 @@ import { inviteCode } from '../lib/util.js'
 import { copyText, openWhatsApp } from '../lib/share.js'
 import { createLeague, recordInvite } from '../stores/demo.js'
 import { toast } from '../stores/ui.js'
+import { appUrl } from '../lib/url.js'
 
 const router = useRouter()
 const name = ref('')
@@ -18,7 +19,7 @@ const milestone = ref(true)
 const code = ref(inviteCode('FIVE'))
 watch(name, (v) => (code.value = inviteCode(v || 'FIVE')))
 
-const url = computed(() => `${location.origin}/leagues?join=${code.value}`)
+const url = computed(() => appUrl(`/leagues?join=${code.value}`))
 const text = computed(() => `Join my SportyStreet league "${name.value || 'My league'}" — code ${code.value}`)
 
 function toggleType(t) {

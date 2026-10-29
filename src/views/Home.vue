@@ -12,12 +12,14 @@ import { countdown, greeting } from '../lib/format.js'
 import { useNow } from '../lib/now.js'
 import { pwa } from '../lib/pwa.js'
 import { twistCopy } from '../lib/rules.js'
+import { community, loadLeagues } from '../stores/community.js'
 import { demo } from '../stores/demo.js'
 import { missionList } from '../stores/missions.js'
 import { capability, notify, unreadCount } from '../stores/notify.js'
 import { loadResult, loadRounds, phaseOf, rounds } from '../stores/rounds.js'
 import { session } from '../stores/session.js'
 import { store } from '../lib/util.js'
+import { asset } from '../lib/url.js'
 
 const now = useNow()
 const alertsOpen = ref(false)
@@ -25,6 +27,7 @@ const installOpen = ref(false)
 const installDismissed = ref(store.get('installDismissed', false))
 
 onMounted(async () => {
+  if (!community.loaded) loadLeagues()
   await loadRounds({ force: rounds.loaded })
   const settled = rounds.list.filter((r) => phaseOf(r) === 'settled' && rounds.teams[r.id])
   settled.slice(0, 2).forEach((r) => loadResult(r.id).catch(() => {}))
@@ -42,19 +45,14 @@ const lastResult = computed(() => {
   return r ? { round: r, result: rounds.results[r.id] } : null
 })
 const mission = computed(() => missionList().find((m) => !m.claimed) ?? null)
-const league = computed(() => demo.leagues?.find((l) => l.type === 'FRIENDS' && l.members))
+const league = computed(() => community.mine.find((l) => l.type !== 'CREATOR' && l.myRank))
 const leagueLine = computed(() => {
   const l = league.value
   if (!l) return null
-  const sorted = [...l.members].sort((a, b) => b.pts - a.pts)
-  const i = sorted.findIndex((m) => m.me)
-  const leader = sorted[0]
-  return i === 0 ? `You lead by ${leader.pts - (sorted[1]?.pts ?? 0)} pts` : `${leader.pts - sorted[i].pts} pts behind ${leader.name}`
+  const top = l.memberPreview.find((p) => !p.isYou)
+  return `${l.myRank === 1 ? 'Top of the table' : top ? `${top.displayName} leads` : `${l.memberCount} members`}${l.roundsRemaining ? ` · ${l.roundsRemaining} rounds left` : ''}`
 })
-const leagueRank = computed(() => {
-  const l = league.value
-  return l ? [...l.members].sort((a, b) => b.pts - a.pts).findIndex((m) => m.me) + 1 : null
-})
+const leagueRank = computed(() => league.value?.myRank ?? null)
 const showAlertsCard = computed(() => notify.permission !== 'granted' && !['unsupported', 'insecure'].includes(capability().level))
 const showInstall = computed(() => !pwa.installed && !installDismissed.value && (pwa.canInstall || pwa.isIOS))
 const unread = computed(() => unreadCount())
@@ -76,7 +74,7 @@ function dismissInstall() {
             <Icon name="bell" />
             <span v-if="unread" class="bell-dot" />
           </RouterLink>
-          <RouterLink to="/profile" aria-label="Profile"><Avatar :name="session.user?.displayName" size="sm" ring color="#5B3A29" /></RouterLink>
+          <RouterLink to="/profile" aria-label="Profile"><Avatar :name="session.user?.displayName" :src="session.user?.avatarUrl" size="sm" ring color="#5B3A29" /></RouterLink>
         </div>
       </div>
     </header>
@@ -132,7 +130,7 @@ function dismissInstall() {
         <Icon name="chevron" :size="18" class="m" />
       </button>
       <div v-if="showInstall" class="card row">
-        <img src="/pwa-64x64.png" alt="" width="40" height="40" style="border-radius: 10px" />
+        <img :src="asset('pwa-64x64.png')" alt="" width="40" height="40" style="border-radius: 10px" />
         <button class="f1 col g2" @click="installOpen = true"><b class="sm">Install the app</b><span class="xs m">Home-screen icon, full screen, offline.</span></button>
         <button class="btn xs" @click="installOpen = true">Install</button>
         <button class="icon-btn m" aria-label="Dismiss" style="margin: -8px -8px -8px 0" @click="dismissInstall"><Icon name="close" :size="18" /></button>

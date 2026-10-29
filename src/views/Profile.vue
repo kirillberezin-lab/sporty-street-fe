@@ -71,7 +71,7 @@ const badges = computed(() => [
       </div>
       <div class="row g12" style="padding: 0 16px">
         <div style="position: relative">
-          <Avatar :name="session.user?.displayName" color="#5B3A29" size="xl" />
+          <Avatar :name="session.user?.displayName" :src="session.user?.avatarUrl" color="#5B3A29" size="xl" />
           <span class="badge hh lvl">{{ level }}</span>
         </div>
         <div class="col g4 f1">

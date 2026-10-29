@@ -4,6 +4,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api/index.js'
+import { STATIC } from '../api/client.js'
 import Icon from '../components/Icon.vue'
 import SquadShareCard from '../components/SquadShareCard.vue'
 import { decodeChallenge } from '../lib/challenge.js'
@@ -37,6 +38,9 @@ onMounted(async () => {
     players.value = list.filter(Boolean)
     if (ch.teamId && rounds.teams[round.id]?.id !== ch.teamId) {
       saveChallenge({ roundId: ch.roundId, teamId: ch.teamId, name: ch.name || 'A friend', playerIds: ch.playerIds })
+      // No server in the static build: the friend's five joins this device's round. Every device
+      // plays the same seeded events, so it scores exactly as on their phone (except their sub).
+      if (STATIC) await api.dev.ghostTeam({ roundId: ch.roundId, teamId: ch.teamId, name: ch.name || 'A friend', playerIds: ch.playerIds, captainId: ch.captainId }).catch(() => null)
     }
   } catch (e) {
     error.value = e.status === 404 ? 'This round no longer exists.' : e.message

@@ -3,6 +3,7 @@ import BottomSheet from './BottomSheet.vue'
 import Icon from './Icon.vue'
 import { promptInstall, pwa } from '../lib/pwa.js'
 import { toast } from '../stores/ui.js'
+import { asset } from '../lib/url.js'
 
 defineProps({ open: Boolean })
 const emit = defineEmits(['close'])
@@ -17,7 +18,7 @@ async function install() {
 <template>
   <BottomSheet :open="open" @close="emit('close')">
     <div class="row g12">
-      <img src="/pwa-192x192.png" alt="" width="64" height="64" style="border-radius: 16px; box-shadow: 0 8px 20px rgba(228, 24, 39, .35)" />
+      <img :src="asset('pwa-192x192.png')" alt="" width="64" height="64" style="border-radius: 16px; box-shadow: 0 8px 20px rgba(228, 24, 39, .35)" />
       <div class="col g2 f1">
         <span class="h2">Install SportyStreet</span>
         <span class="sm m">Full screen, home-screen icon, works offline, lock-screen alerts.</span>

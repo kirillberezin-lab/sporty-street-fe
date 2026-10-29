@@ -3,6 +3,7 @@ import { renderRecapCard } from './cards.js'
 import { num, topPercent } from './format.js'
 import { shortName } from './players.js'
 import { copyText, downloadBlob, shareNative } from './share.js'
+import { appUrl } from './url.js'
 
 export function rankLine(result, total) {
   if (!result) return ''
@@ -22,9 +23,9 @@ export async function shareRecap({ roundName, result, total, rows }) {
   })
   const file = new File([blob], 'sportystreet-recap.png', { type: 'image/png' })
   const text = `I scored ${result.finalScore} pts in ${roundName} on SportyStreet (${line}). Beat that 👇`
-  const res = await shareNative({ title: 'My SportyStreet recap', text, url: location.origin, file })
+  const res = await shareNative({ title: 'My SportyStreet recap', text, url: appUrl(), file })
   if (res !== 'unsupported') return res
   downloadBlob(blob, file.name)
-  await copyText(`${text} ${location.origin}`)
+  await copyText(`${text} ${appUrl()}`)
   return 'saved'
 }

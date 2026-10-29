@@ -39,6 +39,24 @@
         "--strictPort"
       ],
       "port": 5177
+    },
+    {
+      "name": "static-pages",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "VITE_STATIC=1 BASE_PATH=/sporty-street-fe/ npx vite build && cp dist/index.html dist/404.html && VITE_STATIC=1 BASE_PATH=/sporty-street-fe/ npx vite preview --port 4180 --strictPort"
+      ],
+      "port": 4180
+    },
+    {
+      "name": "render-api",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "npx vite build && API_TARGET=https://sporty-street-fe.onrender.com PUSH_RELAY=0 npx vite preview --port 4190 --strictPort"
+      ],
+      "port": 4190
     }
   ]
 }

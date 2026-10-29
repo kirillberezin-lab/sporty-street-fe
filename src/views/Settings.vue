@@ -4,6 +4,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api/index.js'
+import { STATIC } from '../api/client.js'
 import AlertsSheet from '../components/AlertsSheet.vue'
 import BottomSheet from '../components/BottomSheet.vue'
 import Flag from '../components/Flag.vue'
@@ -31,7 +32,7 @@ const devOk = ref(true)
 const roundId = ref(null)
 // GET /rounds never lists DRAFT rounds, so the seed's second round ("Champions Night") is looked up
 // by its deterministic id — DemoSeed.id("round:2") = UUID.nameUUIDFromBytes("round:2").
-const SEED_DRAFT_ROUNDS = ['16a8a2a1-351b-31f0-b9c9-291d59ff415c']
+const SEED_DRAFT_ROUNDS = STATIC ? [] : ['16a8a2a1-351b-31f0-b9c9-291d59ff415c']
 const draftRounds = ref([])
 async function loadDraftRounds() {
   const found = await Promise.all(SEED_DRAFT_ROUNDS.map((id) => api.round(id).catch(() => null)))
@@ -191,7 +192,7 @@ async function dev(kind) {
       </div>
 
       <template v-if="devOk">
-        <span class="xs b m up">Demo controls · local backend</span>
+        <span class="xs b m up">Demo controls · {{ STATIC ? 'in-browser game server' : 'local backend' }}</span>
         <div class="card col g12">
           <div class="row g6">
             <select v-model="roundId" class="input sm f1" style="height: 40px; font-size: 14px">
@@ -199,13 +200,19 @@ async function dev(kind) {
             </select>
           </div>
           <div class="row g6 wrap">
-            <button class="btn xs sec" :disabled="!!busy || phase === 'settled'" @click="dev('open')">Open</button>
-            <button class="btn xs sec" :disabled="!!busy || phase !== 'open'" @click="dev('start')">Start (lock)</button>
-            <button class="btn xs" :disabled="!!busy || phase !== 'live' || sim?.running" @click="dev('sim')"><Icon name="play" :size="14" />Simulator</button>
-            <button class="btn xs dark" :disabled="!!busy || !sim?.running" @click="dev('stop')"><Icon name="stop" :size="14" />Stop</button>
-            <button class="btn xs sec" :disabled="!!busy || phase !== 'live'" @click="dev('settle')">Settle</button>
+            <template v-if="STATIC">
+              <button class="btn xs" :disabled="!!busy || phase !== 'open'" @click="dev('start')"><Icon name="play" :size="14" />Kick off now</button>
+            </template>
+            <template v-else>
+              <button class="btn xs sec" :disabled="!!busy || phase === 'settled'" @click="dev('open')">Open</button>
+              <button class="btn xs sec" :disabled="!!busy || phase !== 'open'" @click="dev('start')">Start (lock)</button>
+              <button class="btn xs" :disabled="!!busy || phase !== 'live' || sim?.running" @click="dev('sim')"><Icon name="play" :size="14" />Simulator</button>
+              <button class="btn xs dark" :disabled="!!busy || !sim?.running" @click="dev('stop')"><Icon name="stop" :size="14" />Stop</button>
+              <button class="btn xs sec" :disabled="!!busy || phase !== 'live'" @click="dev('settle')">Settle</button>
+            </template>
           </div>
-          <span class="xs m">Simulator: {{ sim ? (sim.running ? `running · ${sim.currentMatchMinute}'` : sim.completed ? 'finished' : 'stopped') : '—' }}{{ sim?.lastError ? ` · ${sim.lastError}` : '' }}. Open sets a 10-minute entry deadline and the round goes live by itself when it passes (Start does it now). 90 match minutes take ~3 min. Settle once the simulator has finished and the sub is on.</span>
+          <span v-if="STATIC" class="xs m">No server: the game runs in this browser. A new round kicks off every few minutes on a shared clock — everyone gets the same goals at the same time, so challenge links work between phones. 90 minutes take ~3 min and the round settles itself. <b>Kick off now</b> starts the selected round early on this device only.</span>
+          <span v-else class="xs m">Simulator: {{ sim ? (sim.running ? `running · ${sim.currentMatchMinute}'` : sim.completed ? 'finished' : 'stopped') : '—' }}{{ sim?.lastError ? ` · ${sim.lastError}` : '' }}. Open sets a 10-minute entry deadline and the round goes live by itself when it passes (Start does it now). 90 match minutes take ~3 min. Settle once the simulator has finished and the sub is on.</span>
           <button class="btn xs ghost" :disabled="!!busy" @click="dev('reset')"><Icon name="refresh" :size="14" />Reset demo data</button>
         </div>
       </template>
@@ -216,7 +223,7 @@ async function dev(kind) {
     <InstallSheet :open="installOpen" @close="installOpen = false" />
     <BottomSheet :open="usersOpen" @close="usersOpen = false">
       <span class="h2">Play as…</span>
-      <span class="t">Seeded users of the local backend. Sign-in screens are not part of this build.</span>
+      <span class="t">{{ STATIC ? 'Demo players on this device — each has their own squads, RP and vouchers.' : 'Seeded users of the local backend.' }} Sign-in screens are not part of this build.</span>
       <div class="col g6">
         <button v-for="u in DEMO_USERS" :key="u.username" class="opt" :class="{ on: u.username === session.username }" @click="pickUser(u.username)">
           <span class="col g2 f1" style="text-align: left"><b class="sm">{{ u.username[0].toUpperCase() + u.username.slice(1) }}</b><span class="xs m">{{ u.note }}</span></span>

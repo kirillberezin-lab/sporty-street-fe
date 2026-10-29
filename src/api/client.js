@@ -2,6 +2,15 @@
 import { uuid } from '../lib/util.js'
 
 export const API_BASE = '/api/v1'
+// Static build: no server, the API runs in the page (src/api/local.js). Tree-shaken otherwise.
+export const STATIC = import.meta.env.VITE_STATIC === '1'
+const local = STATIC ? import('./local.js') : null
+
+/** EventSource for the round stream — the in-page one in the static build. */
+export async function openEventSource(url) {
+  if (local) return new (await local).LocalEventSource(url)
+  return new EventSource(url, { withCredentials: true })
+}
 
 // Stable backend error codes (ApiException / TeamService / RewardService) → copy for players.
 const FRIENDLY = {
@@ -53,7 +62,7 @@ export async function request(method, path, { body, headers = {}, idempotencyKey
   if (idempotencyKey) init.headers['Idempotency-Key'] = idempotencyKey
   let res
   try {
-    res = await fetch(`${API_BASE}${path}`, init)
+    res = local ? await (await local).localFetch(`${API_BASE}${path}`, init) : await fetch(`${API_BASE}${path}`, init)
   } catch (e) {
     if (e.name === 'AbortError') throw e
     throw new ApiError({ code: 'NETWORK', message: e.message })

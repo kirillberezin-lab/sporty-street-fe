@@ -1,12 +1,14 @@
 <script setup>
-// Creator league (design 6.4): "beat the creator", his five, takes with reactions, copy his five.
+// Creator league (design 6.4): league, creator and table from the community API (by slug); the take
+// and the five to copy are local extras (stores/demo.js CREATORS). Joining is a local preview.
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api/index.js'
 import Avatar from '../components/Avatar.vue'
 import Icon from '../components/Icon.vue'
 import TopBar from '../components/TopBar.vue'
-import { compact } from '../lib/format.js'
+import { compact, num } from '../lib/format.js'
+import { leagueBanter, leagueBySlug, leagueDetail } from '../stores/community.js'
 import { shortName } from '../lib/players.js'
 import { CREATORS, demo, joinCreator } from '../stores/demo.js'
 import { addStarter, setBench, useDraft } from '../stores/draft.js'
@@ -17,11 +19,38 @@ import { toast, toastError } from '../stores/ui.js'
 
 const route = useRoute()
 const router = useRouter()
-const creator = computed(() => CREATORS.find((c) => c.id === route.params.id))
-const joined = computed(() => demo.leagues?.some((l) => l.creatorId === route.params.id))
-const reactions = ref({ '🔥': 4100, '😂': 812, '🤝': 1300 })
+const slug = String(route.params.id)
+const extra = CREATORS.find((c) => c.id === slug)
+const league = ref(null)
+const members = ref([])
+const takes = ref([])
+const missing = ref(false)
+const creator = computed(() => (league.value || extra ? {
+  name: league.value?.creator?.displayName ?? extra?.name ?? '',
+  avatarUrl: league.value?.avatarUrl ?? null,
+  fans: league.value?.creator?.fans ?? extra?.fans ?? 0,
+  bio: extra?.bio ?? league.value?.description ?? '',
+  take: extra?.take ?? null,
+  five: extra?.five ?? [],
+} : null))
+const joined = computed(() => league.value?.joined || demo.joinedCreators?.includes(league.value?.id))
 const copying = ref(false)
-onMounted(loadFeatured)
+onMounted(async () => {
+  loadFeatured()
+  try {
+    league.value = await leagueBySlug(slug)
+    if (!league.value) return (missing.value = !extra)
+    const [d, b] = await Promise.all([leagueDetail(league.value.id), leagueBanter(league.value.id)])
+    members.value = d.members
+    takes.value = b.messages.items.slice(0, 3)
+  } catch {
+    missing.value = !extra
+  }
+})
+function join() {
+  joinCreator(league.value.id)
+  toast({ title: `Joined ${league.value.name}`, tone: 'success' })
+}
 
 async function copyFive() {
   const round = nextOpenRound()
@@ -60,11 +89,11 @@ async function copyFive() {
         <template #right><span class="pill w">CREATOR LEAGUE</span></template>
       </TopBar>
       <div class="row g12" style="padding: 0 16px 16px; color: #fff">
-        <Avatar :name="creator.name" color="#1A1D23" size="xl" ring />
+        <Avatar :name="creator.name" :src="creator.avatarUrl" color="#1A1D23" size="xl" ring />
         <div class="col g4">
           <span class="disp" style="font-size: 32px">{{ creator.name }}</span>
           <span class="xs" style="opacity: .9">{{ creator.bio }}</span>
-          <span class="pill" style="background: #fff; color: var(--ink); align-self: flex-start">{{ compact(creator.fans) }} in league</span>
+          <span class="pill" style="background: #fff; color: var(--ink); align-self: flex-start">{{ compact(creator.fans) }} fans</span>
         </div>
       </div>
     </header>
@@ -73,8 +102,8 @@ async function copyFive() {
         <div class="ibox" style="background: var(--red); color: #fff"><span class="disp" style="font-size: 16px">VS</span></div>
         <div class="col g2 f1"><b class="sm">Beat {{ creator.name.split(' ').at(-1) }}</b><span class="xs m">Finish above {{ creator.name }} this round for bragging rights. 38% of fans did last week.</span></div>
       </div>
-      <div class="card col g12">
-        <div class="row between"><b class="sm">His five</b><span class="pill o">Revealed at lock</span></div>
+      <div v-if="creator.five.length" class="card col g12">
+        <div class="row between"><b class="sm">Their five</b><span class="pill o">Revealed at lock</span></div>
         <div class="row g6">
           <div v-for="n in creator.five" :key="n" class="col g4 f1 items-center">
             <Avatar :player="featuredPlayer(n)" size="md" />
@@ -82,24 +111,37 @@ async function copyFive() {
           </div>
         </div>
       </div>
-      <div class="card col g6">
-        <div class="row g6"><Avatar :name="creator.name" color="#1A1D23" size="xs" /><b class="sm">{{ creator.name.split(' ').at(-1) }}'s take</b><span class="xs m">2h</span></div>
+      <div v-if="creator.take" class="card col g6">
+        <div class="row g6"><Avatar :name="creator.name" :src="creator.avatarUrl" color="#1A1D23" size="xs" /><b class="sm">{{ creator.name }}'s take</b></div>
         <span class="sm" style="line-height: 1.45">“{{ creator.take }}”</span>
-        <div class="row g6"><button v-for="(n, e) in reactions" :key="e" class="chip sm" @click="reactions[e] += 1">{{ e }} {{ compact(n) }}</button></div>
       </div>
-      <div class="tbl">
-        <div class="tr"><span class="rk">1</span><Avatar name="okonkwo fc" size="sm" /><b class="f1">okonkwo_fc</b><b>171</b></div>
-        <div class="tr me"><span class="rk xs" style="width: auto">{{ joined ? '14.8k' : '—' }}</span><Avatar :name="session.user?.displayName" color="#5B3A29" size="sm" /><b class="f1">{{ session.user?.displayName }}'s Five</b><b>{{ joined ? 142 : '—' }}</b></div>
+      <div v-for="m in takes" :key="m.id" class="card col g6">
+        <div class="row g6"><Avatar :name="m.author.displayName" :src="m.author.avatarUrl" size="xs" /><b class="sm">{{ m.author.displayName }}</b></div>
+        <span class="sm">“{{ m.text }}”</span>
+        <div class="row g6"><span v-for="(n, e) in m.reactions" :key="e" class="chip sm">{{ e }} {{ compact(n) }}</span></div>
       </div>
-      <button v-if="!joined" class="btn sec md" @click="joinCreator(creator.id); toast({ title: `Joined ${creator.name} League`, tone: 'success' })">Join {{ creator.name }} League</button>
+      <template v-if="members.length">
+        <span class="xs b m up">League table</span>
+        <div class="tbl">
+          <div v-for="m in members" :key="m.profile.id" class="tr" :class="{ me: m.profile.isYou }">
+            <span class="rk">{{ m.rank }}</span>
+            <Avatar :name="m.profile.displayName" :src="m.profile.avatarUrl" size="sm" />
+            <b class="f1 ellipsis">{{ m.profile.isYou ? `${m.profile.displayName} (you)` : m.profile.displayName }}</b>
+            <b class="num">{{ num(m.score) }}</b>
+          </div>
+          <div v-if="joined && !members.some((m) => m.profile.isYou)" class="tr me"><span class="rk">{{ members.length + 1 }}</span><Avatar :name="session.user?.displayName" :src="session.user?.avatarUrl" size="sm" /><b class="f1">{{ session.user?.displayName }} (you)</b><b class="num">0</b></div>
+        </div>
+      </template>
+      <button v-if="league && !joined" class="btn sec md" @click="join">Join {{ league.name }}</button>
     </main>
     <footer class="foot" style="background: var(--bg)">
-      <button class="btn" :disabled="copying" @click="copyFive"><span v-if="copying" class="spin" />Copy his five &amp; edit</button>
+      <button v-if="creator.five.length" class="btn" :disabled="copying" @click="copyFive"><span v-if="copying" class="spin" />Copy their five &amp; edit</button>
     </footer>
   </div>
   <div v-else class="screen">
     <TopBar back="/leagues" title="Creator league" />
-    <main class="ct">
+    <main v-if="!missing" class="ct"><div class="skel" style="height: 200px" /></main>
+    <main v-else class="ct">
       <div class="empty"><div class="ico"><Icon name="info" /></div><b style="color: var(--ink)">League not found</b><RouterLink to="/leagues" class="btn sm">All leagues</RouterLink></div>
     </main>
   </div>

@@ -169,17 +169,127 @@ live standings and in league rivalries. Limitations: on iOS links open in Safari
 (no link capturing); rich previews in chats use the static `og:image` (set `PUBLIC_URL` for an absolute URL) —
 per-squad previews would need server-side rendered OG tags.
 
+## Rewards (agreed with the backend, 29 Oct)
+
+Rewards has two categories:
+
+1. **Sporty merch store.** Bought with RP from rounds and missions. Matchday Coffee and Club Scarf
+   are hidden (`HIDDEN_GIFTS`).
+2. **Partner rewards.** The four creatives in `public/rewards/`, never bought (`src/lib/perks.js`,
+   `src/stores/perks.js`).
+
+   | Reward | State | How |
+   |---|---|---|
+   | Free bet | open | Claim the ZMW 10 free bet gift |
+   | Refer a friend | open | ZMW 20 free bet per invited friend |
+   | Cashback | locked | Reach #1 in Lagos Ballers → ZMW 15 virtual cashback |
+   | Lucky Wheel | locked | Win 5 rounds in Lagos Ballers → 3 spins |
+
+   The seeded league table is static, so the rounds you finish are added to your row in Lagos
+   Ballers (`withMyRounds` in `stores/community.js`). Their points go to your league score, and each
+   round you win counts as a league win. Alice starts 2nd, 23 pts behind Ada, with 4 wins, so one
+   good round unlocks both rewards and fires a "Reward unlocked" alert. Claimed codes are demo
+   entitlements until the partner APIs exist. When the backend ships its own task state, replace
+   `taskStatus()` with it.
+
+## Social screens (community API)
+
+Leagues, Rivalries, Banter, creator leagues and Back a manager read the backend's read-only community
+API (`GET /leagues…`, `/backing/managers`, see the backend's `docs/community-api.md`). Avatars come from
+`avatarUrl` in `/me`, leaderboards and community objects. A backend without these endpoints answers
+404. In that case the app uses the bundled port of `CommunityService` (`src/mock/community.js`),
+so the screens look the same. Joining or creating leagues, quick messages, reactions and backings
+with fan points are local previews.
+
+After a backend update, run `npm run sync-media ../sporty-street`. It refreshes `public/media`
+(players, avatars, league art and their credits) and `src/mock/community-seed.js`.
+
+## Hosting
+
+### GitHub Pages (static demo, no backend)
+
+GitHub Pages serves files only, so the Java backend cannot run there. The static build runs the game server in the
+browser instead (`VITE_STATIC=1`): `src/mock/core.js` answers every API call and replaces the SSE stream, and its state
+is saved in `localStorage`.
+
+* **Rounds run on a shared clock.** A new round kicks off every 6 minutes (`VITE_ROUND_EVERY_MIN`). Each round has two
+  open rounds queued behind it, 16–24 bot managers, and a seeded, realistic match script: goals, assists, cards, VAR
+  corrections and the late-goal twist. The round plays 90 minutes in about 3 minutes and settles itself. Every device
+  computes the same events at the same time, so a challenge link puts the friend's five into the same round on the
+  other phone, and it scores the same there.
+* Close the app and come back later: the rounds catch up, finished rounds are settled, and RP is credited.
+* Alerts arrive while the app is open, including in a background tab, as system notifications: kick-off, goals, cards,
+  sub moment, sub active, half-time, the twist window, rank moves and full time. **Lock-screen push with the app
+  closed needs a server**, which Pages does not have.
+* Each player starts with 100 RP (a `WELCOME` entry), so gifts can be redeemed straight away.
+
+Deploy:
+
+1. Copy the backend's photos into `public/media` with `npm run sync-media`, then commit them. The static build has no
+   backend to serve `/media`. `vite preview` also serves them before proxying to the backend.
+2. On GitHub, open Settings → Pages → Source and choose **GitHub Actions**.
+3. Push to `main`. `.github/workflows/pages.yml` builds with `BASE_PATH=/<repo>/` and deploys the site to
+   `https://<owner>.github.io/<repo>/`.
+
+Locally:
+
+```bash
+npm run dev:static
+```
+
+```bash
+BASE_PATH=/sporty-street-fe/ npm run build:static && npm run preview:static
+```
+
+### Frontend on Render (or any Node host) with the real backend
+
+`vite preview` serves `dist/` and proxies `/api` and `/media` to `API_TARGET`. For a hosted backend the proxy
+rewrites `Host` (`changeOrigin`), so routing by host (Render, Fly, Railway) works. `*.onrender.com` is allowed. Add
+other hosts with `ALLOWED_HOSTS=a.example.com,.example.org`.
+
+```bash
+API_TARGET=https://<backend>.onrender.com npm run build && API_TARGET=https://<backend>.onrender.com npx vite preview --host 0.0.0.0 --port $PORT
+```
+
+The browser only ever talks to the frontend origin, so the backend needs no CORS and keeps its cookie session.
+
+## Round stream — notes for the backend
+
+`GET /api/v1/rounds/{id}/stream` (`LiveController`) is consumed by `src/stores/live.js`. It drives Live tactics,
+Standings and every in-app alert, and the push relay polls the same data. What would help:
+
+1. **Match clock.** The snapshot has no match minute. The app polls `GET /dev/simulator` for it, which exists only
+   in the `local` profile, so in production there is no minute, no half-time and no twist countdown. Add
+   `payload.clock = { matchMinute, phase: PRE|LIVE|HT|FT }`, as the mock does.
+2. **Live scores and events.** Nothing in the payload says what happened in the matches; only the team breakdown
+   does, after a separate `GET /teams/{id}/score-breakdown`. Add `payload.matches[]` with fixtureId, club names,
+   home/away goals and the last ~8 events (minute, type, playerId, playerName, side). The mock sends exactly this,
+   and the UI ("Around the grounds") already reads it.
+3. **Full snapshot every 2 s for every client.** `publish()` rebuilds round, team, standings and result for each
+   connection every 2 s, even when nothing changed: N clients × 2 transactions per second. Send only when
+   `stateVersion` changed, or cache one envelope per round and version, and add the user's team on top.
+4. **Breakdown in the stream.** Add `myTeam.timeline`, or a `breakdownVersion`. The app currently refetches
+   `/score-breakdown` on every score change.
+5. **Reconnect.** There is no `id:` field and no `retry:`. Send `id: <stateVersion>` and `retry: 3000`, so
+   `Last-Event-ID` works and clients back off evenly.
+6. **Lifecycle.** The emitter timeout is 30 minutes, after which the client reconnects, which is fine. Complete the
+   emitters of a settled round after the final snapshot so connections do not linger. Settled rounds are also
+   streamed every 2 s forever.
+7. **Auth.** `EventSource` cannot send headers, so the stream relies on the `dev_user` cookie (`Path=/api`). Keep
+   cookie auth working for this endpoint when real login arrives.
+
 ## Project structure
 
 ```
 server/            dev-only Node helpers (not shipped)
-  mock-api.mjs     mock of the backend contract: auth, rounds, players, auto-pick, teams, subs (60 s delay),
-                   scoring (late ×2, captain ×2, Home Hero +2), SSE, settlement, RP, gifts, idempotency
-  mock-data.mjs    seed: users alice…henry, clubs, players, rounds, scripted match events
+  mock-api.mjs     HTTP + SSE wrapper around src/mock/core.js (`npm run dev:mock`)
   push-relay.mjs   Web Push sender + subscription store (see above)
   vite-plugin.mjs  mounts both into vite dev/preview
 src/
-  api/             fetch client (errors, 401 re-login, idempotent retries) and endpoints
+  mock/            backend mock shared by Node and the static build: core.js (contract, scoring, simulator,
+                   autopilot schedule), data.js (seed, same ids as the backend), md5.js
+  api/             fetch client (errors, 401 re-login, idempotent retries) and endpoints; local.js runs the
+                   mock in the page for the static build
   stores/          reactive stores: session, rounds, draft, live (SSE), notify, rewards, demo, missions
   lib/             liveDiff (alerts), challenge links, share + canvas cards, PWA, formatting, rules copy
   components/      pitch, Home Hero card, sheets, alerts sheet, toasts…

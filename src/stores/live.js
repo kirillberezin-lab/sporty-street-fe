@@ -3,9 +3,11 @@
 // reconnect immediately gets the current state. One shared connection per round.
 import { onBeforeUnmount, reactive } from 'vue'
 import { api } from '../api/index.js'
-import { diffLive, isLive, isSettled } from '../lib/liveDiff.js'
+import { diffLive, isLive, isOpen, isSettled } from '../lib/liveDiff.js'
 import { handleAlerts } from './notify.js'
 import { patchRound, rounds } from './rounds.js'
+import { loadHistory, loadWallet } from './rewards.js'
+import { loadTaskProgress } from './community.js'
 
 const channels = new Map()
 
@@ -21,6 +23,8 @@ function createChannel(roundId) {
     stateVersion: -1,
     asOf: 0,
     minute: null,
+    clock: null, // { matchMinute, phase } — stream extension, see README "Round stream"
+    matches: [], // live scores per fixture — stream extension
     simulator: null,
     prevRanks: {},
     updatedAt: 0,
@@ -47,8 +51,8 @@ function createChannel(roundId) {
     const asOf = Date.parse(envelope.asOf) || Date.now()
     if (envelope.stateVersion < state.stateVersion) return
     if (envelope.stateVersion === state.stateVersion && asOf <= state.asOf) return
-    const { round, myTeam, leaderboard = [], result = null } = envelope.payload ?? {}
-    const prev = state.team ? { round: state.round, team: state.team, timeline: state.timeline } : null
+    const { round, myTeam, leaderboard = [], result = null, clock = null, matches = null } = envelope.payload ?? {}
+    const prev = state.team ? { round: state.round, team: state.team, timeline: state.timeline, minute: state.minute, leaderboard: state.leaderboard } : null
     const scoreChanged = !state.team || state.team.score !== myTeam?.score || state.team.stateVersion !== myTeam?.stateVersion
 
     // Rank movement arrows for the standings (design 4.4).
@@ -62,13 +66,27 @@ function createChannel(roundId) {
     state.team = myTeam ?? null
     state.leaderboard = leaderboard
     state.result = result
+    if (clock) {
+      state.clock = clock
+      state.minute = clock.matchMinute
+      devMinute = false // the stream carries the clock, no need to poll the dev simulator
+    }
+    if (matches) state.matches = matches
     state.updatedAt = Date.now()
     if (round) patchRound(round)
     rounds.teams[roundId] = myTeam ?? null
+    if (result && !rounds.results[roundId]) {
+      // Settlement credited RP: refresh the wallet wherever it is shown.
+      loadWallet().catch(() => {})
+      loadHistory().catch(() => {})
+      // The round also counts in the task league: re-check the Rewards tasks.
+      setTimeout(() => loadTaskProgress(), 0)
+    }
     if (result) rounds.results[roundId] = result
+    if (leaderboard.length) rounds.participants[roundId] = Math.max(rounds.participants[roundId] ?? 0, leaderboard.length)
 
     if (myTeam && scoreChanged) await refreshBreakdown(myTeam)
-    if (prev) handleAlerts(diffLive(prev, { round: state.round, team: state.team, timeline: state.timeline, result }))
+    if (prev) handleAlerts(diffLive(prev, { round: state.round, team: state.team, timeline: state.timeline, result, minute: state.minute, leaderboard }))
     syncMinutePolling()
   }
 
@@ -94,11 +112,19 @@ function createChannel(roundId) {
     }
   }
 
-  function connect() {
+  let connecting = 0
+  let opening = false
+  async function connect() {
     clearTimeout(reconnectTimer)
     es?.close()
+    es = null
     state.status = 'connecting'
-    es = new EventSource(api.streamUrl(roundId), { withCredentials: true })
+    const seq = ++connecting
+    opening = true
+    const source = await api.openStream(roundId)
+    opening = false
+    if (seq !== connecting || closed) return source.close()
+    es = source
     es.addEventListener('open', () => (state.status = 'open'))
     es.addEventListener('ROUND_SNAPSHOT', (e) => {
       state.status = 'open'
@@ -110,11 +136,13 @@ function createChannel(roundId) {
     })
     es.addEventListener('error', () => {
       state.status = 'error'
-      if (es.readyState === EventSource.CLOSED) reconnectTimer = setTimeout(connect, 3000)
+      if (source.readyState === EventSource.CLOSED) reconnectTimer = setTimeout(connect, 3000)
     })
   }
 
+  let closed = false
   function close() {
+    closed = true
     es?.close()
     es = null
     clearTimeout(reconnectTimer)
@@ -128,7 +156,7 @@ function createChannel(roundId) {
     retain() {
       refs += 1
       clearTimeout(closeTimer)
-      if (!es) connect()
+      if (!es && !opening) connect()
       syncMinutePolling()
     },
     release() {
@@ -160,7 +188,8 @@ const background = new Map()
 export function watchLiveRounds() {
   const wanted = new Set(
     rounds.list
-      .filter((r) => (isLive(r.status) || (isSettled(r.status) && background.has(r.id))) && rounds.teams[r.id])
+      // Rounds about to lock are watched too, so the kick-off alert fires.
+      .filter((r) => (isLive(r.status) || (isOpen(r.status) && Date.parse(r.entryDeadline) - Date.now() < 15 * 60_000) || (isSettled(r.status) && background.has(r.id))) && rounds.teams[r.id])
       .map((r) => r.id),
   )
   for (const id of wanted) {
