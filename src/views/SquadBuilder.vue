@@ -56,7 +56,8 @@ const open = computed(() => phaseOf(round.value) === 'open')
 // Practice mode: the round already kicked off (or isn't open) and I have no squad in it. The builder
 // stays fully usable — auto-pick, swaps, captain, review — and "lock" saves a practice five that the
 // share screen shows. Nothing is sent to the server; real entries need an open round.
-const practice = computed(() => ready.value && Boolean(round.value) && !open.value && !team.value)
+// Showcase matchdays (lib/showcase.js) are always practice: they exist only in the app.
+const practice = computed(() => ready.value && Boolean(round.value) && !team.value && (!open.value || Boolean(round.value.showcase)))
 const editable = computed(() => open.value || practice.value)
 const homeCountryId = computed(() => session.user?.countryId ?? null)
 const check = computed(() => validate(draft, rules.value, homeCountryId.value))
@@ -170,8 +171,8 @@ async function toggleAlerts(v) {
   <div class="screen white">
     <TopBar back="/play" :title="round?.name ?? ''">
       <template #right>
-        <span v-if="open" class="xs b red num">{{ countdown(left) }}</span>
-        <span v-else-if="practice" class="pill y">PRACTICE</span>
+        <span v-if="practice" class="pill y">PRACTICE</span>
+        <span v-else-if="open" class="xs b red num">{{ countdown(left) }}</span>
         <span v-else-if="round" class="pill k">LOCKED</span>
       </template>
     </TopBar>
@@ -238,7 +239,7 @@ async function toggleAlerts(v) {
       </div>
       <div v-if="draft.explanation" class="note"><Icon name="star" :size="16" /><span>{{ draft.explanation }}</span></div>
       <div v-if="complete && !check.ok" class="note" style="background: var(--red-50); color: var(--red)"><Icon name="info" :size="16" /><span>{{ check.errors.join(' · ') }}</span></div>
-      <div v-if="practice" class="note" style="background: var(--gold-50); color: #6B4E00"><Icon name="info" :size="16" /><span>{{ round.name }} has already kicked off, so this is a <b>practice squad</b>: build it, captain it and share it. Real entries open with the next round.</span></div>
+      <div v-if="practice" class="note" style="background: var(--gold-50); color: #6B4E00"><Icon name="info" :size="16" /><span>{{ round.showcase ? `${round.name} is a showcase matchday` : `${round.name} has already kicked off` }}, so this is a <b>practice squad</b>: build it, captain it and share it.</span></div>
       <div v-else-if="!open && ready && round" class="note"><Icon name="lock" :size="16" /><span>This round is {{ phaseOf(round) === 'live' ? 'live' : 'not open' }} — squads can't be changed.</span></div>
     </main>
 

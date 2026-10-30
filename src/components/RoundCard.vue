@@ -18,7 +18,12 @@ const team = computed(() => rounds.teams[props.round.id])
 const result = computed(() => rounds.results[props.round.id])
 const twist = computed(() => twistCopy(props.round.rules))
 const fixtures = computed(() => props.round.fixtures ?? [])
-const kind = computed(() => (fixtures.value.length <= 1 ? { label: 'QUICK · 1 match', cls: 'b' } : { label: `MATCHDAY · ${fixtures.value.length} matches`, cls: 'b' }))
+// Backend format (QUICK / MATCHDAY / SPECIAL) when sent; older backends: one match = quick.
+const kind = computed(() => {
+  const n = fixtures.value.length
+  const format = props.round.format ?? (n <= 1 ? 'QUICK' : 'MATCHDAY')
+  return { label: `${format} · ${n} match${n === 1 ? '' : 'es'}`, cls: 'b' }
+})
 const left = computed(() => Date.parse(props.round.entryDeadline) - now.value)
 const players = computed(() => rounds.participants[props.round.id])
 

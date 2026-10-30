@@ -2,6 +2,7 @@ import { reactive } from 'vue'
 import { api } from '../api/index.js'
 import { ApiError } from '../api/client.js'
 import { roundPhase } from '../lib/liveDiff.js'
+import { showcaseRounds } from '../lib/showcase.js'
 import { session } from './session.js'
 
 export const rounds = reactive({
@@ -59,7 +60,9 @@ async function fetchRounds() {
   try {
     // GET /rounds lists only OPEN and LIVE rounds; settled ones need status=SETTLED (DRAFT is never listed).
     const [active, settled] = await Promise.all([api.rounds(), api.rounds({ status: 'SETTLED' }).catch(() => ({ items: [] }))])
-    rounds.list = sortRounds([...(active.items ?? []), ...(settled.items ?? [])])
+    const fromServer = [...(active.items ?? []), ...(settled.items ?? [])]
+    // Demo top-up: showcase matchdays when the server has few open rounds (lib/showcase.js).
+    rounds.list = sortRounds([...fromServer, ...showcaseRounds(fromServer)])
     for (const r of rounds.list) {
       rounds.byId[r.id] = r
       if (r.participantCount != null) rounds.participants[r.id] = r.participantCount

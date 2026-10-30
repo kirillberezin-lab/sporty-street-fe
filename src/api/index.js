@@ -1,5 +1,6 @@
 // Endpoints from the backend OpenAPI snapshot (Sporty Street demo API v1).
-import { API_BASE, openEventSource, request, withIdempotency } from './client.js'
+import { API_BASE, ApiError, openEventSource, request, withIdempotency } from './client.js'
+import { isShowcaseId, showcase } from '../lib/showcase.js'
 
 const qs = (params = {}) => {
   const q = new URLSearchParams()
@@ -8,7 +9,7 @@ const qs = (params = {}) => {
   return s ? `?${s}` : ''
 }
 
-export const api = {
+const api_ = {
   // auth (local profile only)
   login: (username) => request('POST', `/dev/login${qs({ username })}`),
   me: () => request('GET', '/me'),
@@ -82,4 +83,36 @@ export const api = {
     // static build only: a friend's squad from a challenge link joins this device's round
     ghostTeam: (challenge) => request('POST', '/dev/ghost-teams', { body: challenge }),
   },
+}
+
+// Showcase rounds (lib/showcase.js) answer locally: the round itself, the borrowed players of its
+// clubs, and "no team / no standings yet". Everything else goes to the server.
+const notFound = () => new ApiError({ status: 404, code: 'NOT_FOUND', message: 'Resource not found' })
+const roundsOf = (params) => api_.rounds(params)
+function matches(p, params = {}) {
+  const name = (params.name ?? '').toLowerCase()
+  return (!params.position || p.position === params.position) && (!params.countryId || p.countryId === params.countryId) && p.name.toLowerCase().includes(name)
+}
+async function showcasePlayers(id, params) {
+  const s = await showcase(id, roundsOf)
+  if (!s) throw notFound()
+  const page = await api_.players(s.sourceId)
+  const items = (page.items ?? []).filter((p) => s.clubIds.has(p.clubId)).map((p) => ({ ...p, eligible: true })).filter((p) => matches(p, params))
+  return { items, page: 0, size: items.length, total: items.length }
+}
+
+export const api = {
+  ...api_,
+  round: async (id) => (isShowcaseId(id) ? ((await showcase(id, roundsOf))?.round ?? Promise.reject(notFound())) : api_.round(id)),
+  players: (roundId, params) => (isShowcaseId(roundId) ? showcasePlayers(roundId, params) : api_.players(roundId, params)),
+  player: async (roundId, playerId) => {
+    if (!isShowcaseId(roundId)) return api_.player(roundId, playerId)
+    const p = (await showcasePlayers(roundId)).items.find((x) => x.id === playerId)
+    if (!p) throw notFound()
+    return p
+  },
+  myTeam: (roundId) => (isShowcaseId(roundId) ? Promise.reject(notFound()) : api_.myTeam(roundId)),
+  result: (roundId) => (isShowcaseId(roundId) ? Promise.reject(notFound()) : api_.result(roundId)),
+  leaderboard: (roundId, params) => (isShowcaseId(roundId) ? Promise.resolve({ roundId, stateVersion: 0, standings: { items: [], page: 0, size: 0, total: 0 } }) : api_.leaderboard(roundId, params)),
+  autoPick: async (roundId, preferHomeHero) => (isShowcaseId(roundId) ? api_.autoPick((await showcase(roundId, roundsOf)).sourceId, preferHomeHero) : api_.autoPick(roundId, preferHomeHero)),
 }
