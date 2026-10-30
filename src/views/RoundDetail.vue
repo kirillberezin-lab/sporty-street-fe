@@ -45,7 +45,7 @@ const cta = computed(() => {
     if (onBreak.value) return { label: 'On a break', disabled: true }
     return team.value ? { label: 'Edit my five', to: `/rounds/${id}/build`, secondary: { label: 'Squad card', to: `/rounds/${id}/locked` } } : { label: 'Build my five', to: `/rounds/${id}/build` }
   }
-  if (phase.value === 'live') return team.value ? { label: 'Go to live tactics', to: `/rounds/${id}/live` } : { label: 'Watch live standings', to: `/rounds/${id}/standings` }
+  if (phase.value === 'live') return team.value ? { label: 'Go to live tactics', to: `/rounds/${id}/live` } : { label: 'Practice my five', to: `/rounds/${id}/build`, secondary: { label: 'Standings', to: `/rounds/${id}/standings` } }
   if (phase.value === 'settled') return team.value ? { label: 'See my result', to: `/rounds/${id}/result` } : { label: 'Final standings', to: `/rounds/${id}/standings` }
   return { label: 'Entries open soon', disabled: true }
 })

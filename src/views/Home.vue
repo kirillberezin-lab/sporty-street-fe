@@ -134,6 +134,14 @@ function dismissInstall() {
         <Icon name="chevron" :size="18" />
       </RouterLink>
 
+      <!-- nothing open right now: the squad builder still works as practice -->
+      <RouterLink v-if="liveNoTeam && !openRound" :to="`/rounds/${liveNoTeam.id}/build`" class="card red col g6 rise next-card">
+        <div class="row between"><span class="pill w">PRACTICE</span><span class="xs b">No round open right now</span></div>
+        <span class="disp" style="font-size: 30px">Build your world five</span>
+        <span class="sm" style="opacity: .9">Pick five stars from five countries, name a captain, find your Home Hero.</span>
+        <span class="btn md wht" style="margin-top: 6px">Build a practice five</span>
+      </RouterLink>
+
       <!-- next open round -->
       <RouterLink v-if="openRound && !liveEntry" :to="`/rounds/${openRound.id}${rounds.teams[openRound.id] ? '' : '/build'}`" class="card red col g6 rise next-card">
         <div class="row between">

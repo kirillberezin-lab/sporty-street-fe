@@ -53,6 +53,11 @@ const round = computed(() => rounds.byId[id])
 const team = computed(() => rounds.teams[id])
 const rules = computed(() => round.value?.rules ?? session.rules)
 const open = computed(() => phaseOf(round.value) === 'open')
+// Practice mode: the round already kicked off (or isn't open) and I have no squad in it. The builder
+// stays fully usable — auto-pick, swaps, captain, review — and "lock" saves a practice five that the
+// share screen shows. Nothing is sent to the server; real entries need an open round.
+const practice = computed(() => ready.value && Boolean(round.value) && !open.value && !team.value)
+const editable = computed(() => open.value || practice.value)
 const homeCountryId = computed(() => session.user?.countryId ?? null)
 const check = computed(() => validate(draft, rules.value, homeCountryId.value))
 const hero = computed(() => check.value.hero)
@@ -70,11 +75,11 @@ const dupeCountries = computed(() => {
 })
 
 const ctaLabel = computed(() => {
-  if (!open.value) return 'Squads are locked'
+  if (!editable.value) return 'Squads are locked'
   if (onBreak.value) return 'On a break'
   const n = check.value.missing
   if (n > 0) return `Pick ${n} more player${n > 1 ? 's' : ''}`
-  return team.value ? 'Review changes' : 'Review squad'
+  return practice.value ? 'Review practice squad' : team.value ? 'Review changes' : 'Review squad'
 })
 
 let pool = null
@@ -120,6 +125,11 @@ function onCaptain(p) {
 }
 
 async function lockIn() {
+  if (practice.value) {
+    reviewOpen.value = false
+    router.replace({ path: `/rounds/${id}/locked`, query: { practice: '1' } })
+    return
+  }
   saving.value = true
   try {
     const body = lineupBody(draft)
@@ -161,6 +171,7 @@ async function toggleAlerts(v) {
     <TopBar back="/play" :title="round?.name ?? ''">
       <template #right>
         <span v-if="open" class="xs b red num">{{ countdown(left) }}</span>
+        <span v-else-if="practice" class="pill y">PRACTICE</span>
         <span v-else-if="round" class="pill k">LOCKED</span>
       </template>
     </TopBar>
@@ -171,7 +182,7 @@ async function toggleAlerts(v) {
           <span class="h2">Your world five</span>
           <span class="xs m b">{{ draft.starters.length ? 'Tap a player to swap or captain' : `${check.need} starters · ${check.need} countries · 1 bench` }}</span>
         </div>
-        <button class="btn sm" :class="{ sec: draft.starters.length }" :disabled="autoPicking || !open" @click="autoPick">
+        <button class="btn sm" :class="{ sec: draft.starters.length }" :disabled="autoPicking || !editable" @click="autoPick">
           <span v-if="autoPicking" class="spin" />
           <Icon v-else :name="draft.starters.length ? 'swap' : 'star'" :size="16" :stroke="2.2" />
           {{ draft.starters.length ? 'Re-pick' : 'Auto-pick' }}
@@ -227,11 +238,12 @@ async function toggleAlerts(v) {
       </div>
       <div v-if="draft.explanation" class="note"><Icon name="star" :size="16" /><span>{{ draft.explanation }}</span></div>
       <div v-if="complete && !check.ok" class="note" style="background: var(--red-50); color: var(--red)"><Icon name="info" :size="16" /><span>{{ check.errors.join(' · ') }}</span></div>
-      <div v-if="!open && ready && round" class="note"><Icon name="lock" :size="16" /><span>This round is {{ phaseOf(round) === 'live' ? 'live' : 'not open' }} — squads can't be changed.</span></div>
+      <div v-if="practice" class="note" style="background: var(--gold-50); color: #6B4E00"><Icon name="info" :size="16" /><span>{{ round.name }} has already kicked off, so this is a <b>practice squad</b>: build it, captain it and share it. Real entries open with the next round.</span></div>
+      <div v-else-if="!open && ready && round" class="note"><Icon name="lock" :size="16" /><span>This round is {{ phaseOf(round) === 'live' ? 'live' : 'not open' }} — squads can't be changed.</span></div>
     </main>
 
     <footer class="foot">
-      <button class="btn" :disabled="!open || !check.ok || onBreak" @click="reviewOpen = true">{{ ctaLabel }}</button>
+      <button class="btn" :disabled="!editable || !check.ok || onBreak" @click="reviewOpen = true">{{ ctaLabel }}</button>
     </footer>
 
     <PlayerSheet
@@ -269,12 +281,13 @@ async function toggleAlerts(v) {
         </div>
       </div>
       <div class="col g6">
-        <div class="row g6 items-start"><Icon name="lock" :size="18" class="m" /><span class="sm m">You can edit until <b style="color: var(--ink)">{{ clock(round?.entryDeadline) }}</b>, then the squad locks.</span></div>
+        <div v-if="practice" class="row g6 items-start"><Icon name="info" :size="18" class="m" /><span class="sm m">Practice squad — saved on this device, not entered in {{ round?.name }}.</span></div>
+        <div v-else class="row g6 items-start"><Icon name="lock" :size="18" class="m" /><span class="sm m">You can edit until <b style="color: var(--ink)">{{ clock(round?.entryDeadline) }}</b>, then the squad locks.</span></div>
         <div class="row g6 items-start"><Icon name="swap" :size="18" class="m" /><span class="sm m">One substitution during play. {{ draft.bench ? shortName(draft.bench.name) : 'Your bench player' }} scores only from events after coming on ({{ rules?.subActivationDelaySeconds ?? 60 }}s after you confirm){{ benchTwin ? ` and can only replace ${shortName(benchTwin.name)} (same country)` : '' }}.</span></div>
         <div v-if="twist" class="row g6 items-start"><Icon name="bolt" :size="18" class="m" /><span class="sm m">{{ twist.short }} — goals late in the game are worth double.</span></div>
       </div>
       <div class="row"><Toggle :model-value="alertsOn" label="Alerts" :disabled="notify.busy" @update:model-value="toggleAlerts" /><span class="sm f1">Alert me for sub moments &amp; my points</span></div>
-      <button class="btn" :disabled="saving" @click="lockIn"><span v-if="saving" class="spin" />{{ team ? 'Save my five' : 'Lock in my five' }}</button>
+      <button class="btn" :disabled="saving" @click="lockIn"><span v-if="saving" class="spin" />{{ practice ? 'Save my practice five' : team ? 'Save my five' : 'Lock in my five' }}</button>
     </BottomSheet>
   </div>
 </template>

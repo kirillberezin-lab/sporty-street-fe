@@ -17,6 +17,7 @@ import { canShareFiles, copyText, downloadBlob, openWhatsApp, shareNative } from
 import { recordInvite, recordShare } from '../stores/demo.js'
 import { friends, loadFriends } from '../stores/friends.js'
 import { notify } from '../stores/notify.js'
+import { useDraft, validate } from '../stores/draft.js'
 import { loadMyTeam, loadRound, rounds } from '../stores/rounds.js'
 import { session } from '../stores/session.js'
 import { toast, toastError } from '../stores/ui.js'
@@ -32,14 +33,22 @@ onMounted(async () => {
   loadFriends().catch(() => {})
   try {
     await Promise.all([rounds.byId[id] ? null : loadRound(id), rounds.teams[id] ? null : loadMyTeam(id)])
-    if (!rounds.teams[id]) router.replace(`/rounds/${id}/build`)
+    if (!rounds.teams[id] && !practiceTeam.value) router.replace(`/rounds/${id}/build`)
   } catch (e) {
     toastError(e)
   }
 })
 
 const round = computed(() => rounds.byId[id])
-const team = computed(() => rounds.teams[id])
+// Practice squad from the builder (round already started): the card and sharing use the draft.
+const practice = route.query.practice === '1'
+const draft = useDraft(id)
+const practiceTeam = computed(() => {
+  if (!practice || draft.starters.length < 5) return null
+  const hero = validate(draft, rounds.byId[id]?.rules ?? session.rules, session.user?.countryId ?? null).hero
+  return { id: null, starters: draft.starters.map((p) => ({ player: p })), captainPlayerId: draft.captainId, homeHeroPlayerId: hero?.id ?? null }
+})
+const team = computed(() => rounds.teams[id] ?? practiceTeam.value)
 const owner = computed(() => `${session.user?.displayName ?? 'My'}'s world five`)
 const cardPlayers = computed(() =>
   (team.value?.starters ?? []).map((s) => ({
@@ -141,8 +150,9 @@ const challenge = () =>
     <main class="ct" style="align-items: center; gap: 16px">
       <div class="done pop-in"><Icon name="check" :size="34" :stroke="3" /></div>
       <div class="col g4 items-center tc rise">
-        <span class="disp" style="font-size: 38px">Squad locked in</span>
-        <span v-if="notify.permission === 'granted'" class="sm soft-w">Kick-off {{ clock(firstKickoff) }} · we'll ping you when it matters</span>
+        <span class="disp" style="font-size: 38px">{{ practiceTeam && !rounds.teams[id] ? 'Practice squad saved' : 'Squad locked in' }}</span>
+        <span v-if="practiceTeam && !rounds.teams[id]" class="sm soft-w">Practice only — the next open round takes real entries</span>
+        <span v-else-if="notify.permission === 'granted'" class="sm soft-w">Kick-off {{ clock(firstKickoff) }} · we'll ping you when it matters</span>
         <button v-else class="sm" style="color: #FF8A93" @click="alertsOpen = true">Kick-off {{ clock(firstKickoff) }} · <u>turn on alerts</u> for sub moments</button>
       </div>
       <SquadShareCard v-if="team" class="rise" style="animation-delay: .1s" :round-name="round?.name ?? ''" :title="owner" :players="cardPlayers" :link="shortLink" />
